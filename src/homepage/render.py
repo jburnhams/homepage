@@ -3,10 +3,11 @@ import html
 
 CSS = """
 :root{--bg:#f6f5f3;--card:#fff;--ink:#1c1b19;--mute:#6b6862;--line:#dcd9d3;--accent:#2f6f5e;--ok:#2f8f5e;--warn:#b7791f;--bad:#c0392b;color-scheme:light dark}
-@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#201f1d;--ink:#eceae5;--mute:#9c9890;--line:#34322f;--accent:#6bb8a2;--ok:#5fc08a;--warn:#e0a84a;--bad:#e8685a}}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--card:#201f1d;--ink:#eceae5;--mute:#9c9890;--line:#34322f;--accent:#6bb8a2;--ok:#5fc08a;--warn:#e0a84a;--bad:#f0606a}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
 main{max-width:56rem;margin:0 auto;padding:2.5rem 16px 3rem}
-h1{font-size:1.5rem;margin:0}h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:2rem 0 .6rem}
+h1{font-size:1.5rem;font-weight:600;margin:0}h2{font-size:.875rem;font-weight:600;color:var(--mute);margin:2rem 0 .6rem}
+td,.big,.axis,.sub{font-variant-numeric:tabular-nums}
 .sub{color:var(--mute);margin:.15rem 0 0}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr))}
 .card{display:block;padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:10px;color:inherit;text-decoration:none}
@@ -25,8 +26,8 @@ footer{margin-top:2.5rem;font-size:.85rem;color:var(--mute)}footer a{color:var(-
 .gcard{padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:10px}
 .gcard h3{margin:0;font-size:.85rem;font-weight:500;color:var(--mute)}.gcard .big{font-size:1.6rem;font-weight:600;line-height:1.3}
 .gcard .big small{font-size:.85rem;font-weight:400;color:var(--mute)}
-svg.spark{display:block;width:100%;height:4.5rem;margin-top:.4rem;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 50%;border-bottom:1px solid var(--line)}
-svg.spark .area{fill:var(--accent);opacity:.18}svg.spark .line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+svg.spark{display:block;width:100%;height:4.5rem;margin-top:.4rem;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 25%;border-bottom:1px solid var(--line)}
+svg.spark .area{fill:var(--accent);opacity:.18}svg.spark.plain .area{display:none}svg.spark .line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 svg.spark.hi .area{fill:var(--warn)}svg.spark.hi .line{stroke:var(--warn)}svg.spark.vhi .area{fill:var(--bad)}svg.spark.vhi .line{stroke:var(--bad)}
 svg.spark .cache{fill:var(--accent);opacity:.08}
 .stack{display:flex;height:.7rem;border-radius:4px;overflow:hidden;background:var(--line);margin:.6rem 0 .2rem}.stack i{display:block;height:100%}
@@ -106,7 +107,7 @@ def sparkline(values, label):
     pts = " ".join(f"{i * step:.1f},{h - max(0, min(100, v)):.1f}" for i, v in enumerate(values))
     last = values[-1]
     cls = "vhi" if last >= 90 else "hi" if last >= 75 else ""
-    return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
+    return (f'<svg class="spark plain {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
             f'aria-label="{e(label)}: {last:.0f}%, last {len(values)} samples">'
             f'<polygon class="area" points="0,{h} {pts} {w},{h}"/><polyline class="line" points="{pts}"/></svg>')
 
@@ -176,6 +177,26 @@ def resources_section(r):
     return f'<h2>Resources</h2><div class="graphs">{cards}</div>{tables}'
 
 
+def finding(data):
+    """The one thing most worth knowing right now, or None when all is well."""
+    if data.get("failed"):
+        return f'{len(data["failed"])} failed unit(s): {", ".join(data["failed"][:3])}'
+    for d in data.get("disks", []):
+        if d["pct"] >= 90:
+            return f'{d["label"]} is {d["pct"]}% full'
+    r = data.get("resources") or {}
+    cpu = r.get("cpu", [])[-6:]
+    if len(cpu) >= 6 and min(cpu) >= 75:
+        top = (r.get("top_cpu") or [{}])[0]
+        return f'CPU above 75% for the last minute' + (f', mostly {top["name"]}' if top.get("name") else "")
+    if r.get("mem") and r["mem"][-1] >= 90:
+        return f'Memory is {r["mem"][-1]:.0f}% used by programs'
+    behind = [a["name"] for a in data.get("apps", []) if a.get("version") == "behind"]
+    if behind:
+        return f'{len(behind)} app(s) behind their code'
+    return None
+
+
 def page(data, hostname="omarchy", refresh=10):
     s = data.get("system", {})
     sub = []
@@ -185,6 +206,8 @@ def page(data, hostname="omarchy", refresh=10):
         sub.append(f'{human((s["mem_total_kb"] - s["mem_avail_kb"]) * 1024)} of {human(s["mem_total_kb"] * 1024)} RAM in use')
     if s.get("load"):
         sub.append("load " + " ".join(f"{x:.1f}" for x in s["load"]))
+    f = finding(data)
+    sub.insert(0, f if f else "All good")
     alerts = ""
     if data.get("failed"):
         alerts += f'<div class="alert">Failed units: {e(", ".join(data["failed"]))}</div>'
@@ -196,7 +219,7 @@ def page(data, hostname="omarchy", refresh=10):
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="{int(refresh)}"><title>{e(hostname)}</title><style>{CSS}</style></head>
 <body><main>
-<h1>{e(hostname)}</h1><p class="sub">{e(" · ".join(sub)) or "Apps on this machine"}</p>
+<h1>{e(hostname)}</h1><p class="sub">{e(" · ".join(sub))}</p>
 {alerts}
 <h2>Apps</h2><div class="grid">{apps}</div>
 {resources_section(data.get("resources"))}

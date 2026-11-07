@@ -60,10 +60,20 @@ class Render(unittest.TestCase):
         self.assertIn('class="cache"', h)
 
     def test_flags_and_empty(self):
-        self.assertIn("spark vhi", render.sparkline([1, 95], "x"))
+        self.assertIn("plain vhi", render.sparkline([1, 95], "x"))
         self.assertIn("collecting", render.sparkline([1], "x"))
         self.assertEqual(render.resources_section(None), "")
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Finding(unittest.TestCase):
+    def test_finding_priority(self):
+        self.assertIsNone(render.finding(dict(failed=[], disks=[], apps=[])))
+        self.assertIn("failed unit", render.finding(dict(failed=["x.service"], disks=[dict(label="R", pct=95)])))
+        self.assertIn("95% full", render.finding(dict(failed=[], disks=[dict(label="R", pct=95)])))
+        hot = dict(cpu=[80] * 6, top_cpu=[dict(name="ffmpeg")])
+        self.assertIn("mostly ffmpeg", render.finding(dict(failed=[], disks=[], resources=hot)))
+        self.assertIn("All good", render.page(dict(generated="", apps=[], jobs=[], failed=[], disks=[], system={}), "h"))

@@ -65,7 +65,7 @@ def read_procs(proc="/proc"):
 
 
 class Sampler:
-    def __init__(self, proc="/proc", interval=5, keep=180, top=8, clock=time.monotonic):
+    def __init__(self, proc="/proc", interval=5, keep=180, top=6, clock=time.monotonic):
         self.proc, self.interval, self.top, self.clock = proc, interval, top, clock
         self.cpu, self.mem, self.mem_cache = deque(maxlen=keep), deque(maxlen=keep), deque(maxlen=keep)
         self._lock = threading.Lock()
