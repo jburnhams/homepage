@@ -2,7 +2,7 @@
 
 The landing page and status board of a small home server: one page at `/` that lists the web apps behind the Caddy proxy and shows whether they are up, whether they run their latest code, how the nightly jobs went, and how full the disks are. Also holds `webauth`, the single login in front of every app.
 
-The server is Python standard library only (no dependencies). The page is a React + Tailwind front end (`web/`, the [ux-research](https://github.com/jburnhams/ux-research) stack) that polls the JSON every 5 s and draws live charts; its built output `web/dist/` is committed, so the machine needs no Node. `/plain` is the old server-rendered page with no JavaScript (a 10 s `<meta refresh>`), also the fallback if `web/dist` is missing. Runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
+The server is Python standard library only (no dependencies). The page is a React + Tailwind front end (`web/`) built on [strata-react](https://github.com/jburnhams/strata-react) that polls the JSON every 5 s and draws live charts; its built output `web/dist/` is committed, so the machine needs no Node. `/plain` is the old server-rendered page with no JavaScript (a 10 s `<meta refresh>`), also the fallback if `web/dist` is missing. Runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
 
 ```
 browser -> Caddy :80 -> forward_auth -> webauth :8361   (login, signed cookie)
