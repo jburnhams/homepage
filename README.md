@@ -30,6 +30,7 @@ The "running commit" is what `app-refresh` records in `~/.local/state/app-refres
 ```
 cd web && npm install
 npm run check     # typecheck + build into web/dist (commit it)
+npm test          # Vitest + Testing Library + MSW
 UX_RESEARCH=~/code/github/ux-research npm run lint   # slop-lint, operate mode
 ```
 Design decisions and their reasons: `web/DESIGN.md`.

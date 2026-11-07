@@ -8,3 +8,4 @@ React 19 + Tailwind v4 on [strata-react](https://github.com/jburnhams/strata-rea
 - Numbers and times go through `lib/format.ts`. Every status has a word.
 - The server owns the data: it samples `/proc`, computes the finding and serves `/_home/api/status`. The UI only draws it and polls every 5 s (paused while the tab is hidden).
 - `npm run check` (typecheck + build) and, with `UX_RESEARCH=<checkout of jburnhams/ux-research>`, `npm run lint` (slop-lint, operate mode). **`dist/` is committed**: rebuild it (`npm run build`) in the same commit as any change under `web/`, because the home server runs it without Node.
+- Tests: `npm test` (Vitest + Testing Library + jsdom + MSW, `renderWithStrata` from `strata-react/testing`). Put the server into a state with `server.use(...)`, never `vi.mock` or a `fetch` stub. Visual regression with `strata-visual` is not set up yet (homepage issue #3).
