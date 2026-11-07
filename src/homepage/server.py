@@ -7,7 +7,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import collect, render, snippets
+from . import collect, render, resources, snippets
 
 HOME = os.path.expanduser("~")
 DEFAULTS = dict(
@@ -21,8 +21,9 @@ PREFIX = "/_home"          # Caddy forwards /_home/* as well as /, the prefix is
 class Status:
     """Collect at most every `ttl` seconds, whatever the number of viewers."""
 
-    def __init__(self, sites, state, repos, runner=collect.run, ttl=10):
+    def __init__(self, sites, state, repos, runner=collect.run, ttl=10, sampler=None):
         self.sites, self.state, self.repos, self.runner, self.ttl = sites, state, repos, runner, ttl
+        self.sampler = sampler
         self._lock, self._at, self._data = threading.Lock(), 0.0, None
 
     def get(self):
@@ -31,7 +32,9 @@ class Status:
                 apps = snippets.load_apps(self.sites)
                 self._data = collect.collect(apps, self.state, self.repos, self.runner)
                 self._at = time.monotonic()
-            return self._data
+            data = self._data
+        # live numbers are never cached: the sampler already rate-limits itself
+        return dict(data, resources=self.sampler.snapshot()) if self.sampler else data
 
 
 def make_handler(status, hostname):
@@ -74,7 +77,12 @@ def main(argv=None):
     for k, v in DEFAULTS.items():
         p.add_argument("--" + k, default=v)
     a = p.parse_args(argv)
-    st = Status(a.sites, a.state, a.repos)
+    sampler = resources.Sampler()
+    if a.command == "serve":
+        sampler.start()
+    else:
+        sampler.sample()
+    st = Status(a.sites, a.state, a.repos, sampler=sampler)
     host = socket.gethostname()
     if a.command == "print":
         print(render.page(st.get(), host))

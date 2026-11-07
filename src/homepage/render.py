@@ -21,7 +21,16 @@ th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}tr:la
 .bar{height:.5rem;background:var(--line);border-radius:4px;overflow:hidden;min-width:6rem}.bar i{display:block;height:100%;background:var(--accent)}.bar i.hi{background:var(--warn)}.bar i.vhi{background:var(--bad)}
 .alert{background:var(--card);border:1px solid var(--bad);color:var(--bad);border-radius:10px;padding:10px 14px;margin-top:1rem}
 footer{margin-top:2.5rem;font-size:.85rem;color:var(--mute)}footer a{color:var(--mute)}
-@media (max-width:30rem){th:nth-child(3),td:nth-child(3){display:none}}
+.graphs{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))}
+.gcard{padding:14px 16px;background:var(--card);border:1px solid var(--line);border-radius:10px}
+.gcard h3{margin:0;font-size:.85rem;font-weight:500;color:var(--mute)}.gcard .big{font-size:1.6rem;font-weight:600;line-height:1.3}
+.gcard .big small{font-size:.85rem;font-weight:400;color:var(--mute)}
+svg.spark{display:block;width:100%;height:4.5rem;margin-top:.4rem;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 50%;border-bottom:1px solid var(--line)}
+svg.spark .area{fill:var(--accent);opacity:.18}svg.spark .line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+svg.spark.hi .area{fill:var(--warn)}svg.spark.hi .line{stroke:var(--warn)}svg.spark.vhi .area{fill:var(--bad)}svg.spark.vhi .line{stroke:var(--bad)}
+.axis{display:flex;justify-content:space-between;font-size:.75rem;color:var(--mute)}
+th.num,td.num{text-align:right;white-space:nowrap}td.name{max-width:10rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:30rem){.jobs th:nth-child(3),.jobs td:nth-child(3){display:none}}
 """
 
 
@@ -83,7 +92,56 @@ def disk_row(d):
             f'<td>{e(human(d["used"]))} of {e(human(d["total"]))}</td><td>{d["pct"]}%</td></tr>')
 
 
-def page(data, hostname="omarchy", refresh=60):
+def sparkline(values, label):
+    """Inline SVG area chart of 0-100 values, newest on the right. Turns amber/red when the latest value is high."""
+    if len(values) < 2:
+        return '<svg class="spark" role="img" aria-label="%s: collecting data"></svg>' % e(label)
+    w, h = 300, 100
+    step = w / (len(values) - 1)
+    pts = " ".join(f"{i * step:.1f},{h - max(0, min(100, v)):.1f}" for i, v in enumerate(values))
+    last = values[-1]
+    cls = "vhi" if last >= 90 else "hi" if last >= 75 else ""
+    return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
+            f'aria-label="{e(label)}: {last:.0f}%, last {len(values)} samples">'
+            f'<polygon class="area" points="0,{h} {pts} {w},{h}"/><polyline class="line" points="{pts}"/></svg>')
+
+
+def span_label(n, interval):
+    s = max(0, n - 1) * interval
+    return f"{s // 60} min ago" if s >= 90 else f"{s} s ago"
+
+
+def proc_table(title, rows):
+    body = "".join(f'<tr><td class="name" title="pid {r["pid"]}">{e(r["name"])}</td>'
+                   f'<td class="num">{r["cpu"]:.0f}%</td><td class="num">{e(human(r["rss"]))}</td></tr>' for r in rows)
+    return f'<div><table><tr><th>{e(title)}</th><th class="num">CPU</th><th class="num">Memory</th></tr>{body}</table></div>'
+
+
+def resources_section(r):
+    if not r:
+        return ""
+    cpu, mem, n = r.get("cpu", []), r.get("mem", []), r.get("ncpu", 1)
+    cpu_now = f"{cpu[-1]:.0f}%" if cpu else "…"
+    total, avail = r.get("mem_total_kb", 0), r.get("mem_avail_kb", 0)
+    used = (total - avail) * 1024
+    mem_now = f"{mem[-1]:.0f}%" if mem else "…"
+    swap = ""
+    if r.get("swap_total_kb"):
+        swap = f' · swap {human((r["swap_total_kb"] - r["swap_free_kb"]) * 1024)}'
+    iv = r.get("interval", 5)
+    axis = lambda v: f'<div class="axis"><span>{span_label(len(v), iv)}</span><span>now</span></div>'
+    cards = (f'<div class="gcard"><h3>CPU · {n} core{"s" if n != 1 else ""}</h3><div class="big">{cpu_now}</div>'
+             f'{sparkline(cpu, "CPU")}{axis(cpu)}</div>'
+             f'<div class="gcard"><h3>Memory</h3><div class="big">{mem_now} <small>{e(human(used))} of {e(human(total * 1024))}{e(swap)}</small></div>'
+             f'{sparkline(mem, "Memory")}{axis(mem)}</div>')
+    tables = ""
+    if r.get("top_cpu"):
+        tables = (f'<div class="graphs" style="margin-top:12px">{proc_table("Top by CPU", r["top_cpu"])}'
+                  f'{proc_table("Top by memory", r.get("top_mem", []))}</div>')
+    return f'<h2>Resources</h2><div class="graphs">{cards}</div>{tables}'
+
+
+def page(data, hostname="omarchy", refresh=10):
     s = data.get("system", {})
     sub = []
     if "uptime_s" in s:
@@ -106,8 +164,9 @@ def page(data, hostname="omarchy", refresh=60):
 <h1>{e(hostname)}</h1><p class="sub">{e(" · ".join(sub)) or "Apps on this machine"}</p>
 {alerts}
 <h2>Apps</h2><div class="grid">{apps}</div>
-{"<h2>Jobs</h2><table><tr><th>Job</th><th>Last result</th><th>Last run</th><th>Next</th></tr>" + jobs + "</table>" if jobs else ""}
-{"<h2>Storage</h2><table><tr><th>Disk</th><th></th><th>Used</th><th></th></tr>" + disks + "</table>" if disks else ""}
+{resources_section(data.get("resources"))}
+{"<h2>Jobs</h2><table class=\"jobs\"><tr><th>Job</th><th>Last result</th><th>Last run</th><th>Next</th></tr>" + jobs + "</table>" if jobs else ""}
+{"<h2>Storage</h2><table class=\"jobs\"><tr><th>Disk</th><th></th><th>Used</th><th></th></tr>" + disks + "</table>" if disks else ""}
 <footer>Updated {e(data.get("generated", "")[11:16])}
  · <a href="/_home/api/status">json</a> · <a href="/auth/logout">Sign out</a>{(" · " + str(len(behind)) + " app(s) behind their code") if behind else ""}</footer>
 </main></body></html>"""

@@ -2,7 +2,7 @@
 
 The landing page and status board of a small home server: one page at `/` that lists the web apps behind the Caddy proxy and shows whether they are up, whether they run their latest code, how the nightly jobs went, and how full the disks are. Also holds `webauth`, the single login in front of every app.
 
-Python standard library only (no dependencies), server-rendered HTML with no JavaScript (a `<meta refresh>` keeps it current), runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
+Python standard library only (no dependencies), server-rendered HTML with no JavaScript (a 10 s `<meta refresh>` keeps it current, graphs are inline SVG), runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
 
 ```
 browser -> Caddy :80 -> forward_auth -> webauth :8361   (login, signed cookie)
@@ -22,6 +22,7 @@ The "running commit" is what `app-refresh` records in `~/.local/state/app-refres
 ## What the page shows
 - apps: state and version per snippet
 - jobs: last result, last run and next run of backup, syncs, app refresh, health check (only units that exist on the machine, list in `collect.JOBS`)
+- resources: CPU and memory with a rolling 15 min graph (sampled every 5 s from `/proc` by a background thread in `resources.py`, history is in memory and starts empty after a restart), top 8 processes by CPU and by memory (CPU 100% = one core)
 - failed user units (red box), uptime, memory, load, disks (root, mirror disk, server share)
 - `/_home/api/status`: the same data as JSON; `/healthz`
 
