@@ -12,5 +12,5 @@
     "baseUrl": ".",
     "paths": { "@/*": ["./*"] }
   },
-  "include": ["app", "components", "lib", "src", "scripts"]
+  "include": ["app", "components", "lib", "src", "scripts", "tests", "vitest.config.ts"]
 }

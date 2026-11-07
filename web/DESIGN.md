@@ -1,6 +1,6 @@
 # DESIGN.md: the home-server page
 
-Follows `ux-research/ux-design/skill/assets/DESIGN.template.md`, trimmed to what this page decides.
+Components come from strata-react. Follows `ux-research/ux-design/skill/assets/DESIGN.template.md`, trimmed to what this page decides.
 
 - **Mode**: Operate. People open it to check on the machine, not to be persuaded.
 - **The one question**: "Is everything on this machine OK, and if not, what?" **The finding** is the

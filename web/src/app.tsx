@@ -1,12 +1,6 @@
 import * as React from "react";
 import { Pause, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { DataView, EmptyState, Skeleton } from "@/components/ui/data-view";
-import { DataTable, TableSkeleton, type Column } from "@/components/ui/data-table";
-import { LineChart } from "@/components/ui/line-chart";
-import { Metric, MetricStrip } from "@/components/ui/metric";
-import { PageHeader } from "@/components/ui/page-header";
-import { Status } from "@/components/ui/status";
+import { Button, DataTable, DataView, EmptyState, LineChart, Metric, MetricStrip, PageHeader, Skeleton, Status, TableSkeleton, type Column } from "strata-react";
 import { AppCard } from "@/components/app-card";
 import { MemoryBreakdown } from "@/components/memory-breakdown";
 import { ago, bytes, clock, kb, percent, systemdTime, uptime } from "@/lib/format";
@@ -87,7 +81,6 @@ function Charts({ r }: { r: Resources }) {
             formatX={(x) => ago(-x)}
             formatY={percent}
             xTicks={cpu.ticks}
-            yMax={100}
             height={200}
           />
         )}
@@ -103,7 +96,6 @@ function Charts({ r }: { r: Resources }) {
               formatX={(x) => ago(-x)}
               formatY={percent}
               xTicks={mem.ticks}
-              yMax={100}
               height={200}
               colour="var(--chart-2)"
             />

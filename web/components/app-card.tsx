@@ -1,4 +1,4 @@
-import { Status } from "@/components/ui/status";
+import { Status } from "strata-react";
 import type { App } from "@/src/types";
 
 // One app on the machine: a link, its one-line description, whether its service is up and whether it
