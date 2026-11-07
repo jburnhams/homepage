@@ -49,6 +49,17 @@ describe("the home server page", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
   });
 
+  it("keeps the last readings and says they are old when a refresh fails", async () => {
+    let fail = false;
+    server.use(http.get(statusUrl, () => (fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(status))));
+    const { client } = renderWithStrata(<App />);
+    expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    fail = true;
+    await client.refetchQueries({ queryKey: ["status"] });
+    expect(await screen.findByText(/Showing the last readings/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+  });
+
   it("pauses and resumes updates", async () => {
     renderWithStrata(<App />);
     const pause = await screen.findByRole("button", { name: "Pause updates" });

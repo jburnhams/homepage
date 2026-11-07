@@ -19,5 +19,8 @@ export function useStatus(intervalMs: number, paused: boolean): { state: Load<St
   });
   const describe = (e: unknown) => `Could not load the status: ${e instanceof Error ? e.message : "no answer"} Check that the homepage service is running.`;
   const stale = query.isError ? describe(query.error) : null;
-  return { state: toLoad(query, describe), stale };
+  // toLoad maps any query error to an error state, even when a good read is still cached, which would
+  // replace the whole page. Keep showing the last data and let `stale` say it is old.
+  const state: Load<Status> = query.data ? { status: "ready", data: query.data } : toLoad(query, describe);
+  return { state, stale };
 }
