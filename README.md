@@ -22,7 +22,7 @@ The "running commit" is what `app-refresh` records in `~/.local/state/app-refres
 ## What the page shows
 - apps: state and version per snippet
 - jobs: last result, last run and next run of backup, syncs, app refresh, health check (only units that exist on the machine, list in `collect.JOBS`)
-- resources: CPU and memory with a rolling 15 min graph (sampled every 5 s from `/proc` by a background thread in `resources.py`, history is in memory and starts empty after a restart), top 8 processes by CPU and by memory (CPU 100% = one core)
+- resources: CPU, and memory split into used / cached / buffers / free / swap, each with a rolling 15 min graph (sampled every 5 s from `/proc` by a background thread in `resources.py`, history is in memory and starts empty after a restart), top 8 processes by CPU and by memory (CPU 100% = one core)
 - failed user units (red box), uptime, memory, load, disks (root, mirror disk, server share)
 - `/_home/api/status`: the same data as JSON; `/healthz`
 

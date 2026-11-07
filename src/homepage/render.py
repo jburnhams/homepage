@@ -28,6 +28,11 @@ footer{margin-top:2.5rem;font-size:.85rem;color:var(--mute)}footer a{color:var(-
 svg.spark{display:block;width:100%;height:4.5rem;margin-top:.4rem;background:linear-gradient(var(--line) 1px,transparent 1px) 0 0/100% 50%;border-bottom:1px solid var(--line)}
 svg.spark .area{fill:var(--accent);opacity:.18}svg.spark .line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 svg.spark.hi .area{fill:var(--warn)}svg.spark.hi .line{stroke:var(--warn)}svg.spark.vhi .area{fill:var(--bad)}svg.spark.vhi .line{stroke:var(--bad)}
+svg.spark .cache{fill:var(--accent);opacity:.08}
+.stack{display:flex;height:.7rem;border-radius:4px;overflow:hidden;background:var(--line);margin:.6rem 0 .2rem}.stack i{display:block;height:100%}
+.sw{display:inline-block;width:.6rem;height:.6rem;border-radius:2px;margin-right:.45rem}
+.m-used{background:var(--accent)}.m-cached{background:color-mix(in srgb,var(--accent) 45%,transparent)}.m-buffers{background:var(--warn)}.m-free{background:transparent}.m-swap{background:var(--bad)}
+.stack .m-free{background:transparent}table.mem{border:0;border-radius:0;background:none;font-size:.85rem}table.mem td{padding:3px 0}table.mem .d{color:var(--mute);font-size:.78rem}
 .axis{display:flex;justify-content:space-between;font-size:.75rem;color:var(--mute)}
 th.num,td.num{text-align:right;white-space:nowrap}td.name{max-width:10rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media (max-width:30rem){.jobs th:nth-child(3),.jobs td:nth-child(3){display:none}}
@@ -106,6 +111,39 @@ def sparkline(values, label):
             f'<polygon class="area" points="0,{h} {pts} {w},{h}"/><polyline class="line" points="{pts}"/></svg>')
 
 
+def stacked(used, cache, label):
+    """Memory history: apps (used) at the bottom, cache and buffers stacked on top."""
+    if len(used) < 2 or len(cache) != len(used):
+        return sparkline(used, label)
+    w, h = 300, 100
+    step = w / (len(used) - 1)
+    low = [max(0, min(100, v)) for v in used]
+    top = [max(0, min(100, u + c)) for u, c in zip(used, cache)]
+    xy = lambda vs: [f"{i * step:.1f},{h - v:.1f}" for i, v in enumerate(vs)]
+    cls = "vhi" if used[-1] >= 90 else "hi" if used[-1] >= 75 else ""
+    band = " ".join(xy(top) + xy(low)[::-1])
+    return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
+            f'aria-label="{e(label)}: {used[-1]:.0f}% used by programs, {cache[-1]:.0f}% cache">'
+            f'<polygon class="cache" points="{band}"/><polygon class="area" points="0,{h} {" ".join(xy(low))} {w},{h}"/>'
+            f'<polyline class="line" points="{" ".join(xy(low))}"/></svg>')
+
+
+def mem_breakdown(r):
+    total = r.get("mem_total_kb", 0) or 1
+    sw_total, sw_used = r.get("swap_total_kb", 0), r.get("swap_total_kb", 0) - r.get("swap_free_kb", 0)
+    parts = [("used", "Used", r.get("mem_used_kb", 0), "by programs"),
+             ("cached", "Cached", r.get("mem_cached_kb", 0), "file cache, reclaimable"),
+             ("buffers", "Buffers", r.get("mem_buffers_kb", 0), "kernel I/O buffers"),
+             ("free", "Free", r.get("mem_free_kb", 0), "unused")]
+    bar = "".join(f'<i class="m-{k}" style="width:{100 * kb / total:.2f}%" title="{n}: {e(human(kb * 1024))}"></i>' for k, n, kb, _ in parts)
+    rows = "".join(f'<tr><td><span class="sw m-{k}"></span>{n} <span class="d">{d}</span></td>'
+                   f'<td class="num">{e(human(kb * 1024))}</td><td class="num">{100 * kb / total:.0f}%</td></tr>' for k, n, kb, d in parts)
+    if sw_total:
+        rows += (f'<tr><td><span class="sw m-swap"></span>Swap <span class="d">on disk</span></td>'
+                 f'<td class="num">{e(human(sw_used * 1024))}</td><td class="num">{100 * sw_used / sw_total:.0f}%</td></tr>')
+    return f'<div class="stack">{bar}</div><table class="mem">{rows}</table>'
+
+
 def span_label(n, interval):
     s = max(0, n - 1) * interval
     return f"{s // 60} min ago" if s >= 90 else f"{s} s ago"
@@ -123,17 +161,14 @@ def resources_section(r):
     cpu, mem, n = r.get("cpu", []), r.get("mem", []), r.get("ncpu", 1)
     cpu_now = f"{cpu[-1]:.0f}%" if cpu else "…"
     total, avail = r.get("mem_total_kb", 0), r.get("mem_avail_kb", 0)
-    used = (total - avail) * 1024
+    used = r.get("mem_used_kb", total - avail) * 1024
     mem_now = f"{mem[-1]:.0f}%" if mem else "…"
-    swap = ""
-    if r.get("swap_total_kb"):
-        swap = f' · swap {human((r["swap_total_kb"] - r["swap_free_kb"]) * 1024)}'
     iv = r.get("interval", 5)
     axis = lambda v: f'<div class="axis"><span>{span_label(len(v), iv)}</span><span>now</span></div>'
     cards = (f'<div class="gcard"><h3>CPU · {n} core{"s" if n != 1 else ""}</h3><div class="big">{cpu_now}</div>'
              f'{sparkline(cpu, "CPU")}{axis(cpu)}</div>'
-             f'<div class="gcard"><h3>Memory</h3><div class="big">{mem_now} <small>{e(human(used))} of {e(human(total * 1024))}{e(swap)}</small></div>'
-             f'{sparkline(mem, "Memory")}{axis(mem)}</div>')
+             f'<div class="gcard"><h3>Memory</h3><div class="big">{mem_now} <small>{e(human(used))} used of {e(human(total * 1024))}</small></div>'
+             f'{stacked(mem, r.get("mem_cache", []), "Memory")}{axis(mem)}{mem_breakdown(r)}</div>')
     tables = ""
     if r.get("top_cpu"):
         tables = (f'<div class="graphs" style="margin-top:12px">{proc_table("Top by CPU", r["top_cpu"])}'

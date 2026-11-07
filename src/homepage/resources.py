@@ -31,7 +31,11 @@ def read_mem(proc="/proc"):
     try:
         with open(os.path.join(proc, "meminfo")) as fh:
             m = {l.split(":")[0]: int(l.split()[1]) for l in fh if ":" in l}
-        return dict(total_kb=m["MemTotal"], avail_kb=m["MemAvailable"],
+        total, free = m["MemTotal"], m.get("MemFree", 0)
+        buffers = m.get("Buffers", 0)
+        cached = m.get("Cached", 0) + m.get("SReclaimable", 0)      # same split as free(1)
+        return dict(total_kb=total, avail_kb=m["MemAvailable"], free_kb=free, buffers_kb=buffers, cached_kb=cached,
+                    used_kb=max(0, total - free - buffers - cached),
                     swap_total_kb=m.get("SwapTotal", 0), swap_free_kb=m.get("SwapFree", 0))
     except (OSError, KeyError, ValueError, IndexError):
         return {}
@@ -63,7 +67,7 @@ def read_procs(proc="/proc"):
 class Sampler:
     def __init__(self, proc="/proc", interval=5, keep=180, top=8, clock=time.monotonic):
         self.proc, self.interval, self.top, self.clock = proc, interval, top, clock
-        self.cpu, self.mem = deque(maxlen=keep), deque(maxlen=keep)
+        self.cpu, self.mem, self.mem_cache = deque(maxlen=keep), deque(maxlen=keep), deque(maxlen=keep)
         self._lock = threading.Lock()
         self._prev_cpu = self._prev_procs = self._prev_at = None
         self._top_cpu, self._top_mem, self._mem, self._ncpu = [], [], {}, 1
@@ -81,7 +85,8 @@ class Sampler:
                 self._prev_cpu = c
             if mem:
                 self._mem = mem
-                self.mem.append(round(100 * (mem["total_kb"] - mem["avail_kb"]) / mem["total_kb"], 1))
+                self.mem.append(round(100 * mem["used_kb"] / mem["total_kb"], 1))       # apps: used without cache
+                self.mem_cache.append(round(100 * (mem["buffers_kb"] + mem["cached_kb"]) / mem["total_kb"], 1))
             rows = []
             dt = now - self._prev_at if self._prev_at is not None else 0
             for pid, (name, ticks, rss) in procs.items():
@@ -100,8 +105,10 @@ class Sampler:
             m = self._mem
             return dict(
                 interval=self.interval, ncpu=self._ncpu,
-                cpu=list(self.cpu), mem=list(self.mem),
+                cpu=list(self.cpu), mem=list(self.mem), mem_cache=list(self.mem_cache),
                 mem_total_kb=m.get("total_kb", 0), mem_avail_kb=m.get("avail_kb", 0),
+                mem_used_kb=m.get("used_kb", 0), mem_free_kb=m.get("free_kb", 0),
+                mem_buffers_kb=m.get("buffers_kb", 0), mem_cached_kb=m.get("cached_kb", 0),
                 swap_total_kb=m.get("swap_total_kb", 0), swap_free_kb=m.get("swap_free_kb", 0),
                 top_cpu=list(self._top_cpu), top_mem=list(self._top_mem),
             )
