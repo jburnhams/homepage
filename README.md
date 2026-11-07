@@ -34,7 +34,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 Systemd data is read with `systemctl --user ...` (a fixed command list, nothing from the request reaches a shell), cached for 10 s however many people look.
 
 ## webauth
-`bin/webauth` is the login (one password, scrypt hash, signed 365-day cookie, lockout after 5 wrong tries). Unchanged from its first version in the machine's dotfiles; state stays in `~/.config/webauth/auth.json`, outside this repo. `webauth set-password`, `webauth sign-out-everywhere`.
+`bin/webauth` is the login (one password, scrypt hash, signed 365-day cookie, lockout after 5 wrong tries). This is the live copy since 2026-11-07: `~/.local/bin/webauth` (dotfiles) is a launcher that runs it, cloning this repo first if the checkout is missing. Existing sessions survive moves because the signing secret stays in `~/.config/webauth/auth.json`, outside this repo. `webauth set-password`, `webauth sign-out-everywhere`.
 
 ## Deploying on a machine
 The units, the Caddyfile and the snippets are machine config and live in the dotfiles repo, not here. `homepage.service` runs `bin/homepage serve` from a checkout of this repo; `app-refresh` restarts it when the checkout changes. The `caddy/Caddyfile` here is the reference for the proxy config (login check first, then the apps, then `/` and `/_home/*` to this app).
