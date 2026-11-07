@@ -1,0 +1,4 @@
+#!/bin/bash
+# Launcher: runs the homepage server with the project on the path (standard library only, any python3.9+).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec env PYTHONPATH="$ROOT/src" python3 -m homepage "$@"

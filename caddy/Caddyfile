@@ -1,0 +1,37 @@
+# Reverse proxy for the apps on this machine: one site on port 80, one path per app, one login for all of them.
+# Login: /auth/* is the `webauth` service (login page and cookie); every other request is checked with it first (`forward_auth`).
+# Each app has a snippet in sites/*.caddy (a `handle_path` block); to add an app, drop a file there and
+# `systemctl --user reload caddy` (that also rebuilds the landing page; give the snippet a `# app: Name | /path/ | description` line).
+# CADDY_PORT overrides the port (for testing without privileges).
+{
+	auto_https off
+}
+
+:{$CADDY_PORT:80} {
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:8361
+	}
+
+	handle {
+		# `route` keeps this order: the login check first, then the apps
+		route {
+			forward_auth 127.0.0.1:8361 {
+				uri /auth/check
+			}
+
+			import sites/*.caddy
+
+			# the landing page and status board at / (the homepage app; /_home/* is its JSON, same service)
+			handle / {
+				reverse_proxy 127.0.0.1:8365
+			}
+			handle /_home/* {
+				reverse_proxy 127.0.0.1:8365
+			}
+
+			handle {
+				respond "omarchy: nothing at this path" 404
+			}
+		}
+	}
+}

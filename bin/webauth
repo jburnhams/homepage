@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Login for the apps behind the Caddy proxy: one password, a login page, a long-lived signed cookie.
+
+Caddy asks this service about every request (`forward_auth` -> /auth/check): a valid cookie gets 200, anything else is sent
+to the login page. Standard library only. State is ~/.config/webauth/auth.json (mode 600): the password hash and the cookie-signing secret.
+
+  webauth serve [--port 8361]      run the service (the user unit does this)
+  webauth set-password             choose the password (asks twice, nothing is echoed); effective at once
+  webauth sign-out-everywhere      new signing secret: every cookie stops working
+"""
+import argparse, getpass, hashlib, hmac, html, json, os, secrets, sys, time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, quote, urlsplit
+
+CONF = os.path.expanduser(os.environ.get('WEBAUTH_CONF', '~/.config/webauth/auth.json'))
+COOKIE = 'omarchy_auth'; DAYS = 365
+FAILS = {}; LOCK_AFTER, LOCK_WINDOW = 5, 15 * 60                  # failed logins per address before a 15 minute pause
+
+
+def load():
+    try: return json.load(open(CONF))
+    except (OSError, ValueError): return {}
+
+
+def save(d):
+    os.makedirs(os.path.dirname(CONF), exist_ok=True)
+    tmp = CONF + '.tmp'; fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f: json.dump(d, f, indent=2)
+    os.replace(tmp, CONF)
+
+
+def hash_password(pw, salt=None):
+    salt = salt or secrets.token_bytes(16)
+    return salt.hex() + '$' + hashlib.scrypt(pw.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32).hex()
+
+
+def check_password(pw, stored):
+    try: salt, _ = stored.split('$')
+    except ValueError: return False
+    return hmac.compare_digest(hash_password(pw, bytes.fromhex(salt)), stored)
+
+
+def sign(secret, exp): return hmac.new(bytes.fromhex(secret), str(exp).encode(), hashlib.sha256).hexdigest()
+
+
+def make_cookie(secret):
+    exp = int(time.time()) + DAYS * 86400
+    return f'{exp}.{sign(secret, exp)}', DAYS * 86400
+
+
+def valid_cookie(value, secret):
+    try: exp, sig = value.split('.'); return int(exp) > time.time() and hmac.compare_digest(sig, sign(secret, int(exp)))
+    except (ValueError, AttributeError): return False
+
+
+def safe_next(n):
+    return n if n and n.startswith('/') and not n.startswith('//') and '\\' not in n and '\n' not in n and '\r' not in n else '/'
+
+
+PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in</title>
+<style>
+:root {{ --bg:#f6f5f3; --card:#fff; --ink:#1c1b19; --mute:#6b6862; --line:#c9c5bd; --accent:#2f6f5e; --err:#b3261e; color-scheme:light dark; }}
+@media (prefers-color-scheme: dark) {{ :root {{ --bg:#161614; --card:#201f1d; --ink:#eceae5; --mute:#9c9890; --line:#4a4743; --accent:#6bb8a2; --err:#f2877f; }} }}
+* {{ box-sizing:border-box }}
+body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,sans-serif; padding:16px; }}
+form {{ width:100%; max-width:26rem; background:var(--card); border:1px solid var(--line); border-radius:14px; padding:28px 24px; }}
+h1 {{ font-size:1.4rem; margin:0 0 4px }} p {{ color:var(--mute); margin:0 0 20px }}
+input[type=password] {{ width:100%; font:inherit; font-size:1.5rem; padding:16px; border:2px solid var(--line); border-radius:10px; background:var(--bg); color:var(--ink); }}
+input[type=password]:focus {{ outline:none; border-color:var(--accent); }}
+button {{ width:100%; margin-top:14px; font:inherit; font-size:1.15rem; font-weight:600; padding:14px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }}
+@media (prefers-color-scheme: dark) {{ button {{ color:#102019 }} }}
+.err {{ color:var(--err); margin:12px 0 0; }}
+</style></head>
+<body><form method="post" action="/auth/login">
+<h1>omarchy</h1><p>Sign in to continue.</p>
+<input type="text" name="username" value="omarchy" autocomplete="username" hidden>
+<input type="hidden" name="next" value="{next}">
+{body}
+{error}
+</form></body></html>"""
+FIELD = '<input type="password" name="password" autocomplete="current-password" aria-label="Password" placeholder="Password" autofocus required><button type="submit">Sign in</button>'
+
+
+class H(BaseHTTPRequestHandler):
+    server_version = 'webauth'
+
+    def log_message(self, fmt, *a): sys.stderr.write('%s %s\n' % (self.client_ip(), fmt % a))
+
+    def client_ip(self): return (self.headers.get('X-Forwarded-For') or self.client_address[0]).split(',')[0].strip()
+
+    def send(self, code, body=b'', ctype='text/html; charset=utf-8', headers=()):
+        if isinstance(body, str): body = body.encode()
+        self.send_response(code); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(body))); self.send_header('Cache-Control', 'no-store')
+        for k, v in headers: self.send_header(k, v)
+        self.end_headers(); self.wfile.write(body)
+
+    def redirect(self, to, headers=()): self.send(303, b'', headers=[('Location', to), *headers])
+
+    def cookie_value(self):
+        for part in (self.headers.get('Cookie') or '').split(';'):
+            k, _, v = part.strip().partition('=')
+            if k == COOKIE: return v
+
+    def login_page(self, nxt, error='', code=200):
+        d = load()
+        if not d.get('password_hash'): body, error = '<p>No password is set yet. On the machine run <code>webauth set-password</code>.</p>', ''
+        else: body = FIELD
+        self.send(code, PAGE.format(next=html.escape(nxt, quote=True), body=body, error=f'<p class="err" role="alert">{html.escape(error)}</p>' if error else ''))
+
+    def do_GET(self):
+        u = urlsplit(self.path)
+        if u.path == '/auth/check':
+            d = load()
+            if d.get('secret') and d.get('password_hash') and valid_cookie(self.cookie_value(), d['secret']): return self.send(200, b'ok', 'text/plain')
+            nxt = self.headers.get('X-Forwarded-Uri') or '/'
+            return self.send(303, b'', headers=[('Location', '/auth/login?next=' + quote(nxt, safe=''))])
+        if u.path == '/auth/login': return self.login_page(safe_next(parse_qs(u.query).get('next', ['/'])[0]))
+        if u.path == '/auth/logout': return self.redirect('/auth/login', [('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')])
+        self.send(404, 'not found', 'text/plain')
+
+    def do_POST(self):
+        if urlsplit(self.path).path != '/auth/login': return self.send(404, 'not found', 'text/plain')
+        form = parse_qs(self.rfile.read(min(int(self.headers.get('Content-Length') or 0), 4096)).decode(errors='replace'))
+        nxt = safe_next(form.get('next', ['/'])[0]); pw = form.get('password', [''])[0]; ip = self.client_ip(); now = time.time()
+        recent = [t for t in FAILS.get(ip, []) if now - t < LOCK_WINDOW]; FAILS[ip] = recent
+        if len(recent) >= LOCK_AFTER: return self.login_page(nxt, 'Too many wrong passwords. Try again in 15 minutes.', 429)
+        d = load()
+        if d.get('password_hash') and d.get('secret') and check_password(pw, d['password_hash']):
+            FAILS.pop(ip, None); value, age = make_cookie(d['secret'])
+            return self.redirect(nxt, [('Set-Cookie', f'{COOKIE}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax')])
+        recent.append(now); time.sleep(1)                         # slows guessing down
+        self.login_page(nxt, 'Wrong password.', 401)
+
+
+def cmd_set_password(a):
+    pw = getpass.getpass('New password: ')
+    if len(pw) < 6: sys.exit('at least 6 characters')
+    if getpass.getpass('Again: ') != pw: sys.exit('they differ; nothing changed')
+    d = load(); d['password_hash'] = hash_password(pw); d.setdefault('secret', secrets.token_hex(32)); save(d); print('password set')
+
+
+def cmd_sign_out(a):
+    d = load(); d['secret'] = secrets.token_hex(32); save(d); print('every cookie is now invalid')
+
+
+def cmd_serve(a):
+    d = load()
+    if not d.get('secret'): d['secret'] = secrets.token_hex(32); save(d)
+    print(f'webauth on 127.0.0.1:{a.port}; password {"set" if d.get("password_hash") else "NOT SET (run webauth set-password)"}', flush=True)
+    ThreadingHTTPServer(('127.0.0.1', a.port), H).serve_forever()
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter); sub = ap.add_subparsers(dest='cmd', required=True)
+    p = sub.add_parser('serve'); p.add_argument('--port', type=int, default=8361); p.set_defaults(fn=cmd_serve)
+    sub.add_parser('set-password').set_defaults(fn=cmd_set_password); sub.add_parser('sign-out-everywhere').set_defaults(fn=cmd_sign_out)
+    a = ap.parse_args(); a.fn(a)

@@ -1,0 +1,40 @@
+# homepage
+
+The landing page and status board of a small home server: one page at `/` that lists the web apps behind the Caddy proxy and shows whether they are up, whether they run their latest code, how the nightly jobs went, and how full the disks are. Also holds `webauth`, the single login in front of every app.
+
+Python standard library only (no dependencies), server-rendered HTML with no JavaScript (a `<meta refresh>` keeps it current), runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
+
+```
+browser -> Caddy :80 -> forward_auth -> webauth :8361   (login, signed cookie)
+                      -> /            -> homepage :8365  (this app)
+                      -> /<app>/      -> the apps
+```
+
+## Apps come from Caddy snippets
+Each app has one `~/.config/caddy/sites/<app>.caddy`. Its first lines describe it:
+```
+# app: Name | /path/ | one-line description      required: a card on the page
+# unit: systemd-user-unit                          optional: green/red dot (is-active)
+# repo: directory under ~/code/github              optional: running commit vs checked-out commit
+```
+The "running commit" is what `app-refresh` records in `~/.local/state/app-refresh/<unit>.rev` at every service start; a card shows `code newer: a -> b` when the checked-out code is ahead of what runs (the nightly refresh restarts it).
+
+## What the page shows
+- apps: state and version per snippet
+- jobs: last result, last run and next run of backup, syncs, app refresh, health check (only units that exist on the machine, list in `collect.JOBS`)
+- failed user units (red box), uptime, memory, load, disks (root, mirror disk, server share)
+- `/_home/api/status`: the same data as JSON; `/healthz`
+
+## Run and test
+```
+bin/homepage serve [--port 8365]       # the server
+bin/homepage print                     # the page on stdout
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
+Systemd data is read with `systemctl --user ...` (a fixed command list, nothing from the request reaches a shell), cached for 10 s however many people look.
+
+## webauth
+`bin/webauth` is the login (one password, scrypt hash, signed 365-day cookie, lockout after 5 wrong tries). Unchanged from its first version in the machine's dotfiles; state stays in `~/.config/webauth/auth.json`, outside this repo. `webauth set-password`, `webauth sign-out-everywhere`.
+
+## Deploying on a machine
+The units, the Caddyfile and the snippets are machine config and live in the dotfiles repo, not here. `homepage.service` runs `bin/homepage serve` from a checkout of this repo; `app-refresh` restarts it when the checkout changes. The `caddy/Caddyfile` here is the reference for the proxy config (login check first, then the apps, then `/` and `/_home/*` to this app).
