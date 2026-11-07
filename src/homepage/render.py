@@ -165,8 +165,8 @@ def page(data, hostname="omarchy", refresh=10):
 {alerts}
 <h2>Apps</h2><div class="grid">{apps}</div>
 {resources_section(data.get("resources"))}
-{"<h2>Jobs</h2><table class=\"jobs\"><tr><th>Job</th><th>Last result</th><th>Last run</th><th>Next</th></tr>" + jobs + "</table>" if jobs else ""}
-{"<h2>Storage</h2><table class=\"jobs\"><tr><th>Disk</th><th></th><th>Used</th><th></th></tr>" + disks + "</table>" if disks else ""}
+{"<h2>Jobs</h2><table class='jobs'><tr><th>Job</th><th>Last result</th><th>Last run</th><th>Next</th></tr>" + jobs + "</table>" if jobs else ""}
+{"<h2>Storage</h2><table class='jobs'><tr><th>Disk</th><th></th><th>Used</th><th></th></tr>" + disks + "</table>" if disks else ""}
 <footer>Updated {e(data.get("generated", "")[11:16])}
  · <a href="/_home/api/status">json</a> · <a href="/auth/logout">Sign out</a>{(" · " + str(len(behind)) + " app(s) behind their code") if behind else ""}</footer>
 </main></body></html>"""
