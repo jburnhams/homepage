@@ -1,0 +1,188 @@
+/* Homepage of a small home server (Operate). The Plinth theme layer, after ux-research/ui-library.
+   Two files, two owners:
+   - theme.generated.css: colour roles and 12-step ramps from palette.mjs. Regenerate, never hand-edit:
+       node $UX_RESEARCH/ux-design/skill/scripts/palette.mjs --primary "#2f6f5e" --secondary "#b7791f" --contrast 0.5 --out app/theme.generated.css
+   - this file: the roles palette.mjs does not make (status, surfaces) and the non-colour tokens
+     (type, radius, elevation, motion, density). DESIGN.md explains the seeds. */
+@import "tailwindcss";
+
+/* Clear Tailwind's stock namespaces right after Tailwind's own theme loads. With these gone,
+   `bg-indigo-500`, `text-sm`, `rounded-xl` and `shadow-lg` do not compile at all: the only colours,
+   type steps, radii and shadows that exist are the ones this file names. That is the library's
+   strongest anti-drift rule, and it costs nothing at runtime. */
+@theme {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+}
+
+@import "./theme.generated.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Status: fixed semantic roles, never the accent. Each is a pale tint and a dark ink of one hue;
+     the ink is solved to >= 6:1 on its tint and on the ground. Warning takes the secondary seed's
+     amber (hue 75); danger stays at 27. Success (150) is greener than the teal primary (175), and
+     every status carries a word, so colour is never the only cue. */
+  --success-subtle: oklch(95.4% 0.035 150.6);
+  --success: oklch(45.9% 0.109 150.1);
+  --warning-subtle: oklch(95.5% 0.03 78);
+  --warning: oklch(47.6% 0.1 75);
+  --danger-subtle: oklch(95.5% 0.022 27.8);
+  --danger: oklch(48% 0.111 27);
+  --info-subtle: oklch(95.5% 0.023 246);
+  --info: oklch(46.5% 0.11 244.6);
+
+  /* Surfaces: layering by tone, not shadow (Material's surface ladder). */
+  --surface-sunken: var(--neutral-2);
+
+  /* Density: control heights move together (button, input, select). 40px default, 44px on touch
+     (phones and tablets), 32px when a person opts into compact. */
+  --control-h: 2.5rem;
+  --control-h-sm: 2rem;
+
+  /* Motion. Effects (colour, opacity) never overshoot; spatial gets Material Standard's barely
+     visible settle, because this is a utilitarian product. */
+  --motion-effects: 200ms;
+  --motion-spatial: 350ms;
+
+  /* Character (../../character.md). Press feedback is the one motion on a frequent action, so it
+     is short and small: 100ms, 2%, felt more than seen. A moment is the rare, earned one (a
+     finished booking); it is slower and eases out hard, with no overshoot. */
+  --motion-press: 100ms;
+  --motion-moment: 500ms;
+  --ease-moment: cubic-bezier(0.23, 1, 0.32, 1);
+
+}
+
+.dark {
+  --success-subtle: oklch(25.9% 0.045 150.3);
+  --success: oklch(70.5% 0.09 150.1);
+  --warning-subtle: oklch(25.9% 0.04 78);
+  --warning: oklch(71.3% 0.09 78);
+  --danger-subtle: oklch(26% 0.045 27);
+  --danger: oklch(71.7% 0.089 27.3);
+  --info-subtle: oklch(26% 0.045 244.4);
+  --info: oklch(70.8% 0.09 245.3);
+  --surface-sunken: var(--neutral-1);
+}
+
+[data-density="compact"] { --control-h: 2rem; --control-h-sm: 1.75rem; }
+/* After the compact rule, so a coarse pointer always wins: every control, small or compact,
+   stays a 44px target on touch. */
+@media (pointer: coarse) {
+  :root, [data-density="compact"] { --control-h: 2.75rem; --control-h-sm: 2.75rem; }
+}
+
+/* More contrast: the text roles from the same seeds at palette.mjs --contrast 1. */
+@media (prefers-contrast: more) {
+  /* :not(.dark), so these light-theme inks never land on a dark root. */
+  :root:not(.dark) {
+    --foreground: oklch(6.7% 0 0);
+    --muted-foreground: oklch(37% 0.009 145.4);
+    --accent-foreground: oklch(7.3% 0.025 142.5);
+    --secondary-foreground: oklch(5.3% 0.022 29.2);
+  }
+  .dark {
+    --muted-foreground: oklch(80.2% 0.009 145.5);
+  }
+}
+
+@theme inline {
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-surface-sunken: var(--surface-sunken);
+}
+
+@theme {
+  /* One family, the system UI font: this page is served from a home server and should not wait on a
+     font download. System stacks are not a tell on an Operate surface; tabular figures are set below. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* Radius by role. Optical nesting: inner = outer - padding, so a control inside a 8px overlay
+     with 4px padding is 4px, never the same value as its container. */
+  --radius-control: 4px;
+  --radius-surface: 6px;
+  --radius-overlay: 8px;
+  --radius-pill: 9999px;
+
+  /* One elevation channel per surface: hairlines for things on the page, a shadow only for
+     what floats above it. */
+  --shadow-overlay: 0 1px 2px oklch(0% 0 0 / 0.08), 0 8px 24px oklch(0% 0 0 / 0.12);
+
+  --ease-effects: cubic-bezier(0.34, 0.8, 0.34, 1);
+  --ease-spatial: cubic-bezier(0.27, 1.06, 0.18, 1);
+}
+
+/* Type steps as utilities, not --text-* keys: a compound of size, line height and weight that
+   cn() can tell apart from text colours (see lib/utils.ts). Operate scale, ratio about 1.2, fixed
+   rem; nothing above 28px.  */
+@utility type-caption { font-size: 0.75rem; line-height: 1rem; font-weight: 400; }
+@utility type-label { font-size: 0.875rem; line-height: 1.25rem; font-weight: 500; }
+@utility type-body-sm { font-size: 0.875rem; line-height: 1.25rem; font-weight: 400; }
+@utility type-body { font-size: 1rem; line-height: 1.5rem; font-weight: 400; }
+@utility type-heading { font-size: 1.125rem; line-height: 1.5rem; font-weight: 600; }
+@utility type-title { font-size: 1.5rem; line-height: 2rem; font-weight: 600; letter-spacing: -0.01em; }
+@utility type-figure { font-size: 1.75rem; line-height: 2.25rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* State transitions: named properties only (never `transition: all`). `scale` is listed for the
+   press feedback below and runs at the shorter press duration. */
+@utility transition-state {
+  transition-property: color, background-color, border-color, opacity, box-shadow, scale;
+  transition-duration: var(--motion-effects), var(--motion-effects), var(--motion-effects), var(--motion-effects),
+    var(--motion-effects), var(--motion-press);
+  transition-timing-function: var(--ease-effects);
+}
+
+/* Press feedback: the control gives a little under the finger or click. 2% is the most a control
+   used tens of times a day can move without feeling slow (character.md, the frequency budget). */
+@utility press {
+  &:active:not(:disabled) { scale: 0.98; }
+}
+
+/* A moment's entrance: CSS only, no JS, starts from a visible-enough state and runs once when the
+   element mounts. Reduced motion collapses it to an instant change with the rest of the theme. */
+@utility enter-moment {
+  transition-property: opacity, translate;
+  transition-duration: var(--motion-moment);
+  transition-timing-function: var(--ease-moment);
+  @starting-style { opacity: 0; translate: 0 -0.75rem; }
+}
+
+@layer base {
+  html { color-scheme: light; }
+  .dark { color-scheme: dark; }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.5rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* One focus treatment for everything focusable, so no component can forget it. */
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  /* Except where a script moved focus to a heading to announce a result (Done): the heading is
+     not a control, so a ring around it says "press me" to nobody. */
+  h1[tabindex="-1"]:focus-visible, h2[tabindex="-1"]:focus-visible { outline: none; }
+  ::selection { background-color: var(--primary-5); color: var(--foreground); }
+  a { text-underline-offset: 0.2em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

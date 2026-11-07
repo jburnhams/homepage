@@ -1,9 +1,9 @@
 # homepage: notes for agents
 
-- Standard library only, Python 3.9+. Keep it that way: it sits behind the login of every app and `webauth` guards everything, so fewer dependencies is better.
-- `src/homepage/`: `snippets.py` (read the Caddy snippets), `collect.py` (all external calls go through the injectable `run`), `render.py` (HTML), `server.py` (HTTP). Tests in `tests/` fake `run`, no systemd needed: `PYTHONPATH=src python3 -m unittest discover -s tests`.
+- Standard library only on the Python side, Python 3.9+. Keep it that way: it sits behind the login of every app and `webauth` guards everything, so fewer dependencies is better.
+- `src/homepage/`: `snippets.py` (read the Caddy snippets), `collect.py` (all external calls go through the injectable `run`), `resources.py` (CPU/memory/process sampler reading `/proc`, injectable `proc=` for tests), `render.py` (HTML), `server.py` (HTTP). Tests in `tests/` fake `run`, no systemd needed: `PYTHONPATH=src python3 -m unittest discover -s tests`.
 - Escape everything that reaches the HTML (`render.e`); a test checks it. Never pass request data to a command.
-- The page is server-rendered with no JavaScript on purpose. Colours come from CSS variables with a dark-mode block; layout works at phone width.
+- The page at `/` is a React + Tailwind front end in `web/` (rules in `web/AGENTS.md`), built to `web/dist/`, which is committed so the machine needs no Node. The server (`server.py`) only serves that, the JSON API and `/plain`, the old server-rendered no-JavaScript page (`render.py`), which is also the fallback when `web/dist` is missing. Keep `render.py` and the React page showing the same data; the "finding" line is computed once, in Python.
 - `bin/webauth` is the login and the one file that must never be left broken: test it by hand (`curl` the login page and `/auth/check`) after any change, and note that a bad commit here can lock you out of every app.
 - Sandbox test of the login (no password needed): make a temp JSON with `{"password_hash": hash_password('x'), "secret": <64 hex>}` (import `hash_password` from `bin/webauth`), run `WEBAUTH_CONF=<json> bin/webauth serve --port 8391`, then check `/auth/login` 200, `/auth/check` 303 without a cookie, POST wrong password 401, right password 303 + `omarchy_auth` cookie, `/auth/check` with it 200.
 - Machine specifics (ports, which apps, passwords) do not belong here: they are in the dotfiles repo.

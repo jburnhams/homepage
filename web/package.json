@@ -1,0 +1,31 @@
+{
+  "name": "homepage-web",
+  "private": true,
+  "type": "module",
+  "description": "Front end of the home-server status page: React + Tailwind v4 + shadcn-style components (the ux-research / Plinth stack). `npm run build` writes dist/, which is committed so the server needs no Node.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "theme": "node $UX_RESEARCH/ux-design/skill/scripts/palette.mjs",
+    "css": "tailwindcss -i app/globals.css -o dist/app.css --minify",
+    "lint": "node $UX_RESEARCH/ux-design/skill/scripts/slop-lint.mjs .",
+    "build": "node scripts/build.mjs",
+    "check": "npm run typecheck && npm run build"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.2.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.500.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^3.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "esbuild": "^0.25.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.8.0"
+  }
+}

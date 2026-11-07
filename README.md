@@ -2,7 +2,7 @@
 
 The landing page and status board of a small home server: one page at `/` that lists the web apps behind the Caddy proxy and shows whether they are up, whether they run their latest code, how the nightly jobs went, and how full the disks are. Also holds `webauth`, the single login in front of every app.
 
-Python standard library only (no dependencies), server-rendered HTML with no JavaScript (a `<meta refresh>` keeps it current), runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
+The server is Python standard library only (no dependencies). The page is a React + Tailwind front end (`web/`, the [ux-research](https://github.com/jburnhams/ux-research) stack) that polls the JSON every 5 s and draws live charts; its built output `web/dist/` is committed, so the machine needs no Node. `/plain` is the old server-rendered page with no JavaScript (a 10 s `<meta refresh>`), also the fallback if `web/dist` is missing. Runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
 
 ```
 browser -> Caddy :80 -> forward_auth -> webauth :8361   (login, signed cookie)
@@ -22,8 +22,17 @@ The "running commit" is what `app-refresh` records in `~/.local/state/app-refres
 ## What the page shows
 - apps: state and version per snippet
 - jobs: last result, last run and next run of backup, syncs, app refresh, health check (only units that exist on the machine, list in `collect.JOBS`)
+- resources: CPU, and memory split into used / cached / buffers / free / swap, each with a rolling 15 min graph (sampled every 5 s from `/proc` by a background thread in `resources.py`, history is in memory and starts empty after a restart), top 6 processes by CPU and by memory (CPU 100% = one core)
 - failed user units (red box), uptime, memory, load, disks (root, mirror disk, server share)
 - `/_home/api/status`: the same data as JSON; `/healthz`
+
+## Front end
+```
+cd web && npm install
+npm run check     # typecheck + build into web/dist (commit it)
+UX_RESEARCH=~/code/github/ux-research npm run lint   # slop-lint, operate mode
+```
+Design decisions and their reasons: `web/DESIGN.md`.
 
 ## Run and test
 ```
