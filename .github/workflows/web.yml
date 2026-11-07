@@ -2,6 +2,12 @@ name: Web
 on:
   push: { branches: [main], paths: ["web/**", ".github/workflows/web.yml"] }
   pull_request: { branches: [main], paths: ["web/**", ".github/workflows/web.yml"] }
+  # Run by hand on a branch to rewrite the baselines in CI's own Chromium and commit them there.
+  workflow_dispatch:
+    inputs:
+      update_baselines: { type: boolean, default: false }
+permissions:
+  contents: write
 jobs:
   web:
     runs-on: ubuntu-latest
@@ -17,7 +23,16 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code -- dist
       - run: npx playwright install --with-deps chromium
-      - run: npx strata-visual
+      - if: inputs.update_baselines
+        run: |
+          npx strata-visual --update
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/visual/baselines
+          git diff --cached --quiet || git commit -m "Update visual baselines (CI Chromium)"
+          git push
+      - if: "!inputs.update_baselines"
+        run: npx strata-visual
       - if: failure()
         uses: actions/upload-artifact@v4
         with: { name: visual-diffs, path: web/tests/visual/output/, if-no-files-found: ignore }
