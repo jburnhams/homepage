@@ -40,7 +40,7 @@ class Server(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         st = server.Status("/nonexistent", "/nonexistent", "/nonexistent", runner=lambda c, timeout=5: ("", 1))
-        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(st, "testhost"))
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(st, "testhost", dist="/nonexistent"))
         cls.port = cls.srv.server_address[1]
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
 
@@ -64,6 +64,38 @@ class Server(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn("apps", json.loads(body))
         self.assertEqual(self.get("/nope")[0], 404)
+
+
+class Static(unittest.TestCase):
+    """The built front end: files come only from the dist/ listing, never from a path in the request."""
+
+    def test_serves_dist_and_plain_fallback(self):
+        import tempfile, os
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "index.html"), "w").write("<!doctype html>spa")
+            open(os.path.join(d, "app.js"), "w").write("console.log(1)")
+            st = server.Status("/nonexistent", "/nonexistent", "/nonexistent", runner=lambda c, timeout=5: ("", 1), hostname="h")
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(st, "h", dist=d))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                def get(path):
+                    try:
+                        with urllib.request.urlopen("http://127.0.0.1:%d%s" % (srv.server_address[1], path), timeout=5) as r:
+                            return r.status, r.headers.get("Content-Type"), r.read().decode()
+                    except urllib.error.HTTPError as ex:
+                        return ex.code, None, ""
+                self.assertEqual(get("/_home/")[2], "<!doctype html>spa")
+                code, ctype, body = get("/_home/app.js")
+                self.assertEqual((code, body), (200, "console.log(1)"))
+                self.assertIn("javascript", ctype)
+                self.assertIn("h", get("/_home/plain")[2])                      # server-rendered page still there
+                self.assertEqual(get("/_home/../server.py")[0], 404)
+                self.assertEqual(get("/_home/index.html")[0], 404)              # only "/" serves it
+                data = json.loads(get("/_home/api/status")[2])
+                self.assertEqual(data["hostname"], "h")
+                self.assertIn("finding", data)
+            finally:
+                srv.shutdown()
 
 
 if __name__ == "__main__":
