@@ -2,24 +2,34 @@
 """Login for the apps behind the Caddy proxy: one password, a login page, a long-lived signed cookie.
 
 Caddy asks this service about every request (`forward_auth` -> /auth/check): a valid cookie gets 200, anything else is sent
-to the login page. Standard library only. State is ~/.config/webauth/auth.json (mode 600): the password hash and the cookie-signing secret.
+to the login page. Standard library only. State is ~/.config/webauth/auth.json (mode 600): the password hash and the cookie-signing secret,
+and optionally "name" (login page heading) and "cookie" (cookie name).
 
   webauth serve [--port 8361]      run the service (the user unit does this)
   webauth set-password             choose the password (asks twice, nothing is echoed); effective at once
   webauth sign-out-everywhere      new signing secret: every cookie stops working
 """
-import argparse, getpass, hashlib, hmac, html, json, os, secrets, sys, time
+import argparse, getpass, hashlib, hmac, html, json, os, re, secrets, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, urlsplit
 
 CONF = os.path.expanduser(os.environ.get('WEBAUTH_CONF', '~/.config/webauth/auth.json'))
-COOKIE = 'omarchy_auth'; DAYS = 365
+DAYS = 365
+# Per-machine naming lives in the config file, never in this repo: "name" (the heading on the login page and the hidden
+# username a password manager files the password under) and "cookie" (the cookie's name). Changing "cookie" signs everyone out once.
+DEFAULT_NAME, DEFAULT_COOKIE = 'webauth', 'webauth_auth'
 FAILS = {}; LOCK_AFTER, LOCK_WINDOW = 5, 15 * 60                  # failed logins per address before a 15 minute pause
 
 
 def load():
     try: return json.load(open(CONF))
     except (OSError, ValueError): return {}
+
+
+def site_name(d): return str(d.get('name') or DEFAULT_NAME)
+def cookie_name(d):
+    c = str(d.get('cookie') or DEFAULT_COOKIE)
+    return c if re.fullmatch(r'[A-Za-z0-9_-]{1,64}', c) else DEFAULT_COOKIE       # a bad value must not break the header or lock you out
 
 
 def save(d):
@@ -74,8 +84,8 @@ button {{ width:100%; margin-top:14px; font:inherit; font-size:1.15rem; font-wei
 .err {{ color:var(--err); margin:12px 0 0; }}
 </style></head>
 <body><form method="post" action="/auth/login">
-<h1>omarchy</h1><p>Sign in to continue.</p>
-<input type="text" name="username" value="omarchy" autocomplete="username" hidden>
+<h1>{name}</h1><p>Sign in to continue.</p>
+<input type="text" name="username" value="{name}" autocomplete="username" hidden>
 <input type="hidden" name="next" value="{next}">
 {body}
 {error}
@@ -102,13 +112,13 @@ class H(BaseHTTPRequestHandler):
     def cookie_value(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
             k, _, v = part.strip().partition('=')
-            if k == COOKIE: return v
+            if k == cookie_name(load()): return v
 
     def login_page(self, nxt, error='', code=200):
         d = load()
         if not d.get('password_hash'): body, error = '<p>No password is set yet. On the machine run <code>webauth set-password</code>.</p>', ''
         else: body = FIELD
-        self.send(code, PAGE.format(next=html.escape(nxt, quote=True), body=body, error=f'<p class="err" role="alert">{html.escape(error)}</p>' if error else ''))
+        self.send(code, PAGE.format(name=html.escape(site_name(d), quote=True), next=html.escape(nxt, quote=True), body=body, error=f'<p class="err" role="alert">{html.escape(error)}</p>' if error else ''))
 
     def do_GET(self):
         u = urlsplit(self.path)
@@ -118,7 +128,7 @@ class H(BaseHTTPRequestHandler):
             nxt = self.headers.get('X-Forwarded-Uri') or '/'
             return self.send(303, b'', headers=[('Location', '/auth/login?next=' + quote(nxt, safe=''))])
         if u.path == '/auth/login': return self.login_page(safe_next(parse_qs(u.query).get('next', ['/'])[0]))
-        if u.path == '/auth/logout': return self.redirect('/auth/login', [('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' + self.secure_flag())])
+        if u.path == '/auth/logout': return self.redirect('/auth/login', [('Set-Cookie', f'{cookie_name(load())}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' + self.secure_flag())])
         self.send(404, 'not found', 'text/plain')
 
     def do_POST(self):
@@ -130,7 +140,7 @@ class H(BaseHTTPRequestHandler):
         d = load()
         if d.get('password_hash') and d.get('secret') and check_password(pw, d['password_hash']):
             FAILS.pop(ip, None); value, age = make_cookie(d['secret'])
-            return self.redirect(nxt, [('Set-Cookie', f'{COOKIE}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax' + self.secure_flag())])
+            return self.redirect(nxt, [('Set-Cookie', f'{cookie_name(d)}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax' + self.secure_flag())])
         recent.append(now); time.sleep(1)                         # slows guessing down
         self.login_page(nxt, 'Wrong password.', 401)
 

@@ -275,7 +275,7 @@ def perf_val(r: Data, v: float) -> str:
     return f"{v:g} {r['unit']}" if r["unit"] != "%" else f"{v:.0f}%"
 
 
-def page(data: Data, hostname: str = "omarchy", refresh: float = 10, perf: Data | None = None) -> str:
+def page(data: Data, hostname: str = "homepage", refresh: float = 10, perf: Data | None = None) -> str:
     s: Data = data.get("system", {})
     sub: list[str] = []
     if "uptime_s" in s:

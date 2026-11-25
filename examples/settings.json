@@ -1,0 +1,14 @@
+{
+  "sites": "/home/ada/.config/caddy/sites",
+  "state": "/home/ada/.local/state/app-refresh",
+  "repos": "/home/ada/code",
+  "perf": "/home/ada/.local/share/perf-stats",
+  "jobs": [
+    "Backup | nightly-backup",
+    "Sync | work-sync"
+  ],
+  "disks": [
+    "Root | /",
+    "Data disk | /srv/data"
+  ]
+}

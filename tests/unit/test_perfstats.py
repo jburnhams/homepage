@@ -6,7 +6,7 @@ from homepage import perfstats, render
 NOW = datetime.datetime(2026, 11, 25, 12, 0, 0)
 MAIN = (
     "ts,cpu_busy,cpu_maxcore,psi_cpu,psi_mem_some,psi_io_some,mem_avail_gb,swapin_mbs,swapout_mbs,"
-    "nvme0n1_util,sda_util,eno1_rx_mbs,eno1_tx_mbs,gpu_util,top_cpu,top_mem"
+    "nvme0n1_util,sdb_util,eth0_rx_mbs,eth0_tx_mbs,gpu_util,top_cpu,top_mem"
 )
 UNITS = "ts,unit,label,cpu_pct,mem_gb,swap_gb,io_r_mbs,io_w_mbs,gpu_mem_mib,gpu_sm_pct,nproc"
 
@@ -41,7 +41,7 @@ def test_window_stress_and_who(tmp_path: Path):
         f"{stamp(30)},small.service,,10,1,0,0,0,0,0,1",
         f"{stamp(10)},big.service,,18000,19,0,0,0,0,0,3",
         f"{stamp(180)},old.service,,100,5,0,0,0,0,0,1",
-        f"{stamp(30)},claude-remote-control.service,docs:python,200,2,0,1,2,0,0,1",
+        f"{stamp(30)},nightly-import.service,photos,200,2,0,1,2,0,0,1",
         f"{stamp(30)},run-p123-i456.scope,job,90,1,0,0,0,0,0,1",
     ]
     make(tmp_path, rows, units)
@@ -56,7 +56,7 @@ def test_window_stress_and_who(tmp_path: Path):
     names = [(x["name"], x["label"]) for x in s["services"]]
     assert ("old", "") not in names
     assert ("one-off run", "job") in names  # random run-p123-i456.scope names are folded
-    assert ("claude-remote-control", "docs:python") in names  # untagged work keeps its label
+    assert ("nightly-import", "photos") in names  # untagged work keeps its label
     big = next(x for x in s["services"] if x["name"] == "big")
     assert big["ram_gb"] == 20
     assert big["cpu_hours"] == 1.5  # (36000 + 18000) % of a core x 10 s

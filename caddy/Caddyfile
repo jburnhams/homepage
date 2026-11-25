@@ -30,7 +30,7 @@
 			}
 
 			handle {
-				respond "omarchy: nothing at this path" 404
+				respond "Nothing at this path" 404
 			}
 		}
 	}

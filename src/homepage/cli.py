@@ -9,7 +9,7 @@ from strata_python import cli, web
 
 from . import __version__, perfstats, render, resources
 from .server import Status, create_app
-from .settings import SETTINGS
+from .settings import SETTINGS, split_pair
 
 PORT = 8365
 
@@ -21,7 +21,15 @@ def _status(*, live: bool) -> tuple[Status, str, perfstats.Perf]:
     else:
         sampler.sample()
     host = socket.gethostname()
-    status = Status(SETTINGS.get("sites"), SETTINGS.get("state"), SETTINGS.get("repos"), sampler=sampler, hostname=host)
+    status = Status(
+        SETTINGS.get("sites"),
+        SETTINGS.get("state"),
+        SETTINGS.get("repos"),
+        sampler=sampler,
+        hostname=host,
+        jobs=[split_pair(e) for e in SETTINGS.get_list("jobs")],
+        disks=[split_pair(e) for e in SETTINGS.get_list("disks")],
+    )
     perf = perfstats.Perf(SETTINGS.get("perf"), mem_total_gb=lambda: resources.read_mem().get("total_kb", 0) / 1048576)
     return status, host, perf
 

@@ -9,7 +9,7 @@ import { perf, perfUrl, server, status, statusUrl } from "./server";
 describe("the home server page", () => {
   it("shows the host, its default finding and every section", async () => {
     renderWithStrata(<App />);
-    expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
     expect(screen.getByText(/All good: every app is up/)).toBeInTheDocument();
     for (const name of ["Resources", "Over time", "Top processes", "Apps", "Jobs", "Storage"]) {
       expect(screen.getByRole("heading", { name })).toBeInTheDocument();
@@ -46,20 +46,20 @@ describe("the home server page", () => {
     expect(await screen.findByText(/Could not load the status/, undefined, { timeout: 5000 })).toBeInTheDocument();
     server.use(http.get(statusUrl, () => HttpResponse.json(status)));
     await userEvent.click(screen.getByRole("button", { name: /try again/i }));
-    expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
   });
 
   it("keeps the last readings and says they are old when a refresh fails", async () => {
     let fail = false;
     server.use(http.get(statusUrl, () => (fail ? new HttpResponse(null, { status: 500 }) : HttpResponse.json(status))));
     const { client } = renderWithStrata(<App />);
-    expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
     fail = true;
     await client.refetchQueries({ queryKey: ["status"] });
     const notice = await screen.findByRole("status");
     expect(notice).toHaveTextContent(/Could not load the status/);
     expect(notice).toHaveTextContent(/Showing the last readings, from/);
-    expect(screen.getByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
@@ -100,8 +100,8 @@ describe("the over-time section", () => {
     const table = screen.getByRole("grid", { name: "Resources over the period" });
     expect(table).toHaveTextContent("Often 12%");      // 12% of the time over its limit is named, not just coloured
     expect(table).toHaveTextContent("Fine");
-    expect(screen.getByText(/Programs waited for memory for 7 min/)).toHaveTextContent("strata-models 80%");
-    expect(screen.getByRole("grid", { name: "Services and jobs by use" })).toHaveTextContent("claude-remote-control [docs:python]");
+    expect(screen.getByText(/Programs waited for memory for 7 min/)).toHaveTextContent("render-worker 80%");
+    expect(screen.getByRole("grid", { name: "Services and jobs by use" })).toHaveTextContent("nightly-import [photos]");
   });
 
   it("asks the server for the day when that tab is chosen", async () => {

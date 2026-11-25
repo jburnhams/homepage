@@ -14,17 +14,6 @@ from .snippets import AppInfo
 Runner = Callable[..., tuple[str, int]]
 Data = dict[str, Any]
 
-# (label, systemd user unit). Only units that exist are shown.
-JOBS = [
-    ("Backup (restic)", "omarchy-restic-backup"),
-    ("Work sync", "work-sync"),
-    ("Mirror sync", "mirror-sync"),
-    ("App refresh", "app-refresh"),
-    ("GitHub sync", "github-sync"),
-    ("Health check", "omarchy-health-check"),
-    ("Garmin sync", "garmin-sync"),
-]
-
 
 def run(cmd: list[str], timeout: float = 5) -> tuple[str, int]:
     """(stdout, returncode); never raises. The commands are a fixed list in this module, nothing from a request."""
@@ -68,9 +57,10 @@ def app_status(app: AppInfo, runner: Runner = run, state_dir: str | None = None,
     return a
 
 
-def job_status(runner: Runner = run) -> list[Data]:
+def job_status(jobs_to_show: list[tuple[str, str]], runner: Runner = run) -> list[Data]:
+    """`(label, systemd user unit)` pairs from the `jobs` setting; only units that exist are shown."""
     jobs: list[Data] = []
-    for label, unit in JOBS:
+    for label, unit in jobs_to_show:
         d = _show(
             unit + ".service",
             ["LoadState", "Result", "ActiveState", "ExecMainExitTimestamp", "ExecMainStatus"],
@@ -97,12 +87,8 @@ def failed_units(runner: Runner = run) -> list[str]:
     return [line.split()[0] for line in out.splitlines() if line.strip()]
 
 
-def disks(paths: list[tuple[str, str]] | None = None) -> list[Data]:
-    paths = paths or [
-        ("Root (NVMe)", "/"),
-        ("Mirror disk", "/srv/mirror"),
-        ("Server share (~/data)", os.path.expanduser("~/data")),
-    ]
+def disks(paths: list[tuple[str, str]]) -> list[Data]:
+    """`(label, path)` pairs from the `disks` setting; a path other than `/` is skipped while it is not a mount point."""
     res: list[Data] = []
     for label, p in paths:
         if p != "/" and not os.path.ismount(p):
@@ -132,12 +118,19 @@ def system() -> Data:
     return d
 
 
-def collect(apps: list[AppInfo], state_dir: str, repos_dir: str, runner: Runner = run) -> Data:
+def collect(
+    apps: list[AppInfo],
+    state_dir: str,
+    repos_dir: str,
+    runner: Runner = run,
+    jobs: list[tuple[str, str]] | None = None,
+    disk_paths: list[tuple[str, str]] | None = None,
+) -> Data:
     return {
         "generated": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "apps": [app_status(a, runner, state_dir, repos_dir) for a in apps],
-        "jobs": job_status(runner),
+        "jobs": job_status(jobs or [], runner),
         "failed": failed_units(runner),
-        "disks": disks(),
+        "disks": disks(disk_paths if disk_paths is not None else [("Root", "/")]),
         "system": system(),
     }
