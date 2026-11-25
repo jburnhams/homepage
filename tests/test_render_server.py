@@ -66,6 +66,26 @@ class Server(unittest.TestCase):
         self.assertEqual(self.get("/nope")[0], 404)
 
 
+class PerfEndpoint(unittest.TestCase):
+    def test_window_param_and_missing_data(self):
+        import tempfile
+        from homepage import perfstats
+        with tempfile.TemporaryDirectory() as d:
+            st = server.Status("/nonexistent", "/nonexistent", "/nonexistent", runner=lambda c, timeout=5: ("", 1), hostname="h")
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(st, "h", dist="/nonexistent", perf=perfstats.Perf(d)))
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                def get(path):
+                    with urllib.request.urlopen("http://127.0.0.1:%d%s" % (srv.server_address[1], path), timeout=5) as r:
+                        return json.loads(r.read().decode())
+                self.assertEqual(get("/_home/api/perf?window=1h")["window"], "1h")
+                self.assertFalse(get("/_home/api/perf?window=7d")["available"])           # empty folder: says so, no error
+                self.assertEqual(get("/_home/api/perf?window=../../etc")["window"], "24h")  # unknown values fall back, never reach the disk
+                self.assertIn("No performance data yet", urllib.request.urlopen("http://127.0.0.1:%d/_home/plain" % srv.server_address[1]).read().decode())
+            finally:
+                srv.shutdown()
+
+
 class Static(unittest.TestCase):
     """The built front end: files come only from the dist/ listing, never from a path in the request."""
 
