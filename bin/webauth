@@ -88,6 +88,7 @@ class H(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *a): sys.stderr.write('%s %s\n' % (self.client_ip(), fmt % a))
 
+    def secure_flag(self): return '; Secure' if (self.headers.get('X-Forwarded-Proto') or '').split(',')[0].strip().lower() == 'https' else ''
     def client_ip(self): return (self.headers.get('X-Forwarded-For') or self.client_address[0]).split(',')[0].strip()
 
     def send(self, code, body=b'', ctype='text/html; charset=utf-8', headers=()):
@@ -117,7 +118,7 @@ class H(BaseHTTPRequestHandler):
             nxt = self.headers.get('X-Forwarded-Uri') or '/'
             return self.send(303, b'', headers=[('Location', '/auth/login?next=' + quote(nxt, safe=''))])
         if u.path == '/auth/login': return self.login_page(safe_next(parse_qs(u.query).get('next', ['/'])[0]))
-        if u.path == '/auth/logout': return self.redirect('/auth/login', [('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')])
+        if u.path == '/auth/logout': return self.redirect('/auth/login', [('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax' + self.secure_flag())])
         self.send(404, 'not found', 'text/plain')
 
     def do_POST(self):
@@ -129,7 +130,7 @@ class H(BaseHTTPRequestHandler):
         d = load()
         if d.get('password_hash') and d.get('secret') and check_password(pw, d['password_hash']):
             FAILS.pop(ip, None); value, age = make_cookie(d['secret'])
-            return self.redirect(nxt, [('Set-Cookie', f'{COOKIE}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax')])
+            return self.redirect(nxt, [('Set-Cookie', f'{COOKIE}={value}; Path=/; Max-Age={age}; HttpOnly; SameSite=Lax' + self.secure_flag())])
         recent.append(now); time.sleep(1)                         # slows guessing down
         self.login_page(nxt, 'Wrong password.', 401)
 
