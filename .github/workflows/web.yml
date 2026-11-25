@@ -34,5 +34,5 @@ jobs:
       - if: "!inputs.update_baselines"
         run: npx strata-visual
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with: { name: visual-diffs, path: web/tests/visual/output/, if-no-files-found: ignore }
