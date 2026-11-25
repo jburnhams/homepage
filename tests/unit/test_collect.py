@@ -57,6 +57,23 @@ def test_jobs_only_existing_units():
     jobs = collect.job_status([("Backup", "nightly-backup"), ("Sync", "work-sync")], runner)
     assert [j["unit"] for j in jobs] == ["work-sync"]
     assert (jobs[0]["result"], jobs[0]["next"]) == ("success", "Sun 2026-11-08 04:05:00 GMT")
+    assert (jobs[0]["last_at"], jobs[0]["next_at"]) == ("2026-11-07T04:25:28+00:00", "2026-11-08T04:05:00+00:00")
+
+
+def test_job_times_systemd_cannot_give_as_utc_are_none():
+    for stamp in ("", "n/a", "Sat 2026-11-07 04:25:28 CET", "Sat 2026-13-45 04:25:28 UTC"):
+        assert collect._iso(stamp) is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_job_times_are_asked_for_in_utc():
+    asked: list[list[str]] = []
+
+    def runner(cmd: list[str], timeout: float = 5) -> tuple[str, int]:
+        asked.append(cmd)
+        return "LoadState=loaded", 0
+
+    collect.job_status([("Sync", "work-sync")], runner)
+    assert all("--timestamp=utc" in cmd for cmd in asked)
 
 
 def test_no_jobs_configured_shows_none():

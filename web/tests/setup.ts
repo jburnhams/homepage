@@ -14,3 +14,9 @@ afterEach(() => {
   server.resetHandlers();
 });
 afterAll(() => server.close());
+
+// The server puts a <base href> on the page (strata-python's add_web), and strata-react's `withBase` reads
+// the app's mount point from it; the page is mounted at /_home/ behind Caddy.
+const base = document.createElement("base");
+base.href = "/_home/";
+document.head.append(base);

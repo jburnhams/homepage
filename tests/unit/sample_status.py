@@ -13,6 +13,7 @@ DATA = {
         {
             "label": "Backup", "unit": "b", "result": "success", "active": "inactive",
             "last": "Sat 2026-11-07 04:25:28 GMT", "next": "Sun 2026-11-08 02:30:00 GMT",
+            "last_at": "2026-11-07T04:25:28+00:00", "next_at": "2026-11-08T02:30:00+00:00",
         },
         {"label": "Broken", "unit": "x", "result": "exit-code", "active": "failed", "last": "", "next": ""},
     ],
