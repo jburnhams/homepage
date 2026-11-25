@@ -1,11 +1,12 @@
 import * as React from "react";
-import { ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, PauseButton, ScheduleTable, Skeleton, StaleNotice, SystemPanel, TableSkeleton, usePoll, useSystemInfo, type Column, type Poll, type ScheduleRow } from "strata-react";
+import { ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, PauseButton, ScheduleTable, Skeleton, StaleNotice, SystemPanel, TableSkeleton, usePoll, type Column, type Poll, type ScheduleRow } from "strata-react";
 import { Apps } from "@/components/apps";
 import { Memory } from "@/components/memory";
 import { OverTime } from "@/components/over-time";
 import { format, kb, percent } from "@/lib/format";
 import type { Disk, Job, Proc, Resources, Status as Data } from "./types";
 import { useStatus } from "./use-status";
+import { useSystem } from "./use-system";
 
 const POLL_MS = 5000;
 
@@ -18,10 +19,14 @@ const procColumns: Column<Proc>[] = [
 // The scheduled jobs are strata-react's ScheduleTable: the last result as a word, when it last ran and
 // when it runs next (the last two drop on a phone). The server sends both moments as ISO 8601 (`last_at`,
 // `next_at`); a job that has not run says "Never run".
+// systemd's `Result` is "success" or one of several failures ("exit-code", "signal", "timeout", ...); ScheduleTable
+// knows "success" and "failed", so every failure is "failed" and an empty result is a job that has not run.
+const scheduleResult = (result: string): string | null => (result === "" ? null : result === "success" ? "success" : "failed");
+
 const scheduleRows = (jobs: Job[]): ScheduleRow[] =>
   jobs.map((j) => ({
     label: j.label,
-    result: j.result || null,
+    result: scheduleResult(j.result),
     running: j.active === "activating" || j.active === "active",
     last: j.last_at,
     next: j.next_at,
@@ -116,7 +121,7 @@ function Page({ data, poll }: { data: Data; poll: Poll }) {
   const r = data.resources;
   const load = data.system.load;
   const cpu = r?.cpu.at(-1);
-  const system = useSystemInfo({ poll }) // `/api/system` under the page's <base>, which the server adds (add_web);
+  const system = useSystem(poll);
   const memPct = r?.mem.at(-1);
   return (
     <div className="grid gap-8">

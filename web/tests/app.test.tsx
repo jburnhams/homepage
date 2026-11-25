@@ -93,6 +93,15 @@ describe("the home server page", () => {
     expect(screen.getByText(/^Paused\. Last updated \d/)).toBeInTheDocument();
   });
 
+  it("calls every systemd failure result Failed, and a job that never ran Never run", async () => {
+    const job = status.jobs[0];
+    server.use(http.get(statusUrl, () => HttpResponse.json({ ...status, jobs: [{ ...job, label: "Sync", result: "exit-code" }, { ...job, label: "Fresh", result: "" }] })));
+    renderWithStrata(<App />);
+    const jobs = await screen.findByRole("grid", { name: "Scheduled jobs" });
+    expect(jobs).toHaveTextContent(/Sync.*Failed/);
+    expect(jobs).toHaveTextContent(/Fresh.*Never run/);
+  });
+
   it("draws the scheduled jobs as words and the server's own report under About this server", async () => {
     renderWithStrata(<App />);
     const jobs = await screen.findByRole("grid", { name: "Scheduled jobs" });

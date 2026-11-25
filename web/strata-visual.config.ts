@@ -10,6 +10,8 @@ export default defineVisualConfig({
   // machine. The pin gives Chromium a fontconfig whose only font is the file below and answers every
   // system family with it, so the baselines are the same on every Linux machine and CI's.
   systemFonts: { pin: "DejaVu Sans", files: ["tests/visual/fonts/DejaVuSans.ttf"] },
+  // The pause button says when the page last read ("Updated 12:11"); a frozen clock keeps that line the same in every run.
+  time: "2026-11-07T12:00:00Z",
   app: {
     dir: "dist",
     base: "/_home/",
