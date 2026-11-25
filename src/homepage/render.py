@@ -1,5 +1,10 @@
 """Render the status page: server-side HTML, no JavaScript (a <meta refresh> keeps it current)."""
+
 import html
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+Data = Mapping[str, Any]
 
 CSS = """
 :root{--bg:#f6f5f3;--card:#fff;--ink:#1c1b19;--mute:#6b6862;--line:#dcd9d3;--accent:#2f6f5e;--ok:#2f8f5e;--warn:#b7791f;--bad:#c0392b;color-scheme:light dark}
@@ -40,24 +45,26 @@ th.num,td.num{text-align:right;white-space:nowrap}td.name{max-width:10rem;overfl
 """
 
 
-def e(x):
+def e(x: object) -> str:
     return html.escape(str(x), quote=True)
 
 
-def human(n):
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
-            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
+def human(n: float) -> str:
+    units = ("B", "KB", "MB", "GB", "TB")
+    i = 0
+    while n >= 1024 and i < len(units) - 1:
         n /= 1024
+        i += 1
+    return f"{n:.0f} {units[i]}" if i < 2 else f"{n:.1f} {units[i]}"
 
 
-def fmt_uptime(s):
+def fmt_uptime(s: float) -> str:
     d, r = divmod(int(s), 86400)
     h, r = divmod(r, 3600)
     return (f"{d}d " if d else "") + f"{h}h {r // 60}m"
 
 
-def short_time(ts):
+def short_time(ts: str) -> str:
     """'Sat 2026-11-07 04:25:28 GMT' -> '11-07 04:25' (systemd's text, kept readable)."""
     parts = ts.split()
     if len(parts) >= 3 and "-" in parts[1]:
@@ -65,7 +72,7 @@ def short_time(ts):
     return ts or "-"
 
 
-def app_card(a):
+def app_card(a: Data) -> str:
     dot = {"active": "ok", "": "", "unknown": "warn"}.get(a.get("state", ""), "bad")
     meta = ""
     if a.get("unit"):
@@ -75,11 +82,13 @@ def app_card(a):
         meta += f'<span class="tag warn" title="restarted by app-refresh at night">code newer: {e(a["running_rev"])} → {e(a["head_rev"])}</span>'
     elif v == "current":
         meta += f'<span class="tag">{e(a["head_rev"])}</span>'
-    return (f'<a class="card" href="{e(a["path"])}"><strong>{e(a["name"])}</strong>'
-            f'<span class="d">{e(a.get("desc", ""))}</span><div class="meta">{meta}</div></a>')
+    return (
+        f'<a class="card" href="{e(a["path"])}"><strong>{e(a["name"])}</strong>'
+        f'<span class="d">{e(a.get("desc", ""))}</span><div class="meta">{meta}</div></a>'
+    )
 
 
-def job_row(j):
+def job_row(j: Data) -> str:
     ok = j["result"] == "success"
     running = j["active"] in ("activating", "active")
     if running:
@@ -88,75 +97,99 @@ def job_row(j):
         dot, text = "ok", "ok"
     else:
         dot, text = "bad", j["result"] or "never run"
-    return (f'<tr><td>{e(j["label"])}</td><td><span class="dot {dot}"></span> {e(text)}</td>'
-            f'<td>{e(short_time(j["last"]))}</td><td>{e(short_time(j["next"]))}</td></tr>')
+    return (
+        f'<tr><td>{e(j["label"])}</td><td><span class="dot {dot}"></span> {e(text)}</td>'
+        f"<td>{e(short_time(j['last']))}</td><td>{e(short_time(j['next']))}</td></tr>"
+    )
 
 
-def disk_row(d):
+def disk_row(d: Data) -> str:
     cls = "vhi" if d["pct"] >= 90 else "hi" if d["pct"] >= 80 else ""
-    return (f'<tr><td>{e(d["label"])}</td><td><div class="bar"><i class="{cls}" style="width:{d["pct"]}%"></i></div></td>'
-            f'<td>{e(human(d["used"]))} of {e(human(d["total"]))}</td><td>{d["pct"]}%</td></tr>')
+    return (
+        f'<tr><td>{e(d["label"])}</td><td><div class="bar"><i class="{cls}" style="width:{d["pct"]}%"></i></div></td>'
+        f"<td>{e(human(d['used']))} of {e(human(d['total']))}</td><td>{d['pct']}%</td></tr>"
+    )
 
 
-def sparkline(values, label):
+def sparkline(values: Sequence[float], label: str) -> str:
     """Inline SVG area chart of 0-100 values, newest on the right. Turns amber/red when the latest value is high."""
     if len(values) < 2:
-        return '<svg class="spark" role="img" aria-label="%s: collecting data"></svg>' % e(label)
+        return f'<svg class="spark" role="img" aria-label="{e(label)}: collecting data"></svg>'
     w, h = 300, 100
     step = w / (len(values) - 1)
     pts = " ".join(f"{i * step:.1f},{h - max(0, min(100, v)):.1f}" for i, v in enumerate(values))
     last = values[-1]
     cls = "vhi" if last >= 90 else "hi" if last >= 75 else ""
-    return (f'<svg class="spark plain {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
-            f'aria-label="{e(label)}: {last:.0f}%, last {len(values)} samples">'
-            f'<polygon class="area" points="0,{h} {pts} {w},{h}"/><polyline class="line" points="{pts}"/></svg>')
+    return (
+        f'<svg class="spark plain {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
+        f'aria-label="{e(label)}: {last:.0f}%, last {len(values)} samples">'
+        f'<polygon class="area" points="0,{h} {pts} {w},{h}"/><polyline class="line" points="{pts}"/></svg>'
+    )
 
 
-def stacked(used, cache, label):
+def stacked(used: Sequence[float], cache: Sequence[float], label: str) -> str:
     """Memory history: apps (used) at the bottom, cache and buffers stacked on top."""
     if len(used) < 2 or len(cache) != len(used):
         return sparkline(used, label)
     w, h = 300, 100
     step = w / (len(used) - 1)
     low = [max(0, min(100, v)) for v in used]
-    top = [max(0, min(100, u + c)) for u, c in zip(used, cache)]
-    xy = lambda vs: [f"{i * step:.1f},{h - v:.1f}" for i, v in enumerate(vs)]
+    top = [max(0, min(100, u + c)) for u, c in zip(used, cache, strict=True)]
+
+    def xy(vs: Sequence[float]) -> list[str]:
+        return [f"{i * step:.1f},{h - v:.1f}" for i, v in enumerate(vs)]
+
     cls = "vhi" if used[-1] >= 90 else "hi" if used[-1] >= 75 else ""
     band = " ".join(xy(top) + xy(low)[::-1])
-    return (f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
-            f'aria-label="{e(label)}: {used[-1]:.0f}% used by programs, {cache[-1]:.0f}% cache">'
-            f'<polygon class="cache" points="{band}"/><polygon class="area" points="0,{h} {" ".join(xy(low))} {w},{h}"/>'
-            f'<polyline class="line" points="{" ".join(xy(low))}"/></svg>')
+    return (
+        f'<svg class="spark {cls}" viewBox="0 0 {w} {h}" preserveAspectRatio="none" role="img" '
+        f'aria-label="{e(label)}: {used[-1]:.0f}% used by programs, {cache[-1]:.0f}% cache">'
+        f'<polygon class="cache" points="{band}"/><polygon class="area" points="0,{h} {" ".join(xy(low))} {w},{h}"/>'
+        f'<polyline class="line" points="{" ".join(xy(low))}"/></svg>'
+    )
 
 
-def mem_breakdown(r):
+def mem_breakdown(r: Data) -> str:
     total = r.get("mem_total_kb", 0) or 1
     sw_total, sw_used = r.get("swap_total_kb", 0), r.get("swap_total_kb", 0) - r.get("swap_free_kb", 0)
-    parts = [("used", "Used", r.get("mem_used_kb", 0), "by programs"),
-             ("cached", "Cached", r.get("mem_cached_kb", 0), "file cache, reclaimable"),
-             ("buffers", "Buffers", r.get("mem_buffers_kb", 0), "kernel I/O buffers"),
-             ("free", "Free", r.get("mem_free_kb", 0), "unused")]
-    bar = "".join(f'<i class="m-{k}" style="width:{100 * kb / total:.2f}%" title="{n}: {e(human(kb * 1024))}"></i>' for k, n, kb, _ in parts)
-    rows = "".join(f'<tr><td><span class="sw m-{k}"></span>{n} <span class="d">{d}</span></td>'
-                   f'<td class="num">{e(human(kb * 1024))}</td><td class="num">{100 * kb / total:.0f}%</td></tr>' for k, n, kb, d in parts)
+    parts = [
+        ("used", "Used", r.get("mem_used_kb", 0), "by programs"),
+        ("cached", "Cached", r.get("mem_cached_kb", 0), "file cache, reclaimable"),
+        ("buffers", "Buffers", r.get("mem_buffers_kb", 0), "kernel I/O buffers"),
+        ("free", "Free", r.get("mem_free_kb", 0), "unused"),
+    ]
+    bar = "".join(
+        f'<i class="m-{k}" style="width:{100 * kb / total:.2f}%" title="{n}: {e(human(kb * 1024))}"></i>'
+        for k, n, kb, _ in parts
+    )
+    rows = "".join(
+        f'<tr><td><span class="sw m-{k}"></span>{n} <span class="d">{d}</span></td>'
+        f'<td class="num">{e(human(kb * 1024))}</td><td class="num">{100 * kb / total:.0f}%</td></tr>'
+        for k, n, kb, d in parts
+    )
     if sw_total:
-        rows += (f'<tr><td><span class="sw m-swap"></span>Swap <span class="d">on disk</span></td>'
-                 f'<td class="num">{e(human(sw_used * 1024))}</td><td class="num">{100 * sw_used / sw_total:.0f}%</td></tr>')
+        rows += (
+            f'<tr><td><span class="sw m-swap"></span>Swap <span class="d">on disk</span></td>'
+            f'<td class="num">{e(human(sw_used * 1024))}</td><td class="num">{100 * sw_used / sw_total:.0f}%</td></tr>'
+        )
     return f'<div class="stack">{bar}</div><table class="mem">{rows}</table>'
 
 
-def span_label(n, interval):
+def span_label(n: int, interval: float) -> str:
     s = max(0, n - 1) * interval
     return f"{s // 60} min ago" if s >= 90 else f"{s} s ago"
 
 
-def proc_table(title, rows):
-    body = "".join(f'<tr><td class="name" title="pid {r["pid"]}">{e(r["name"])}</td>'
-                   f'<td class="num">{r["cpu"]:.0f}%</td><td class="num">{e(human(r["rss"]))}</td></tr>' for r in rows)
+def proc_table(title: str, rows: Sequence[Data]) -> str:
+    body = "".join(
+        f'<tr><td class="name" title="pid {r["pid"]}">{e(r["name"])}</td>'
+        f'<td class="num">{r["cpu"]:.0f}%</td><td class="num">{e(human(r["rss"]))}</td></tr>'
+        for r in rows
+    )
     return f'<div><table><tr><th>{e(title)}</th><th class="num">CPU</th><th class="num">Memory</th></tr>{body}</table></div>'
 
 
-def resources_section(r):
+def resources_section(r: Data | None) -> str:
     if not r:
         return ""
     cpu, mem, n = r.get("cpu", []), r.get("mem", []), r.get("ncpu", 1)
@@ -165,45 +198,55 @@ def resources_section(r):
     used = r.get("mem_used_kb", total - avail) * 1024
     mem_now = f"{mem[-1]:.0f}%" if mem else "…"
     iv = r.get("interval", 5)
-    axis = lambda v: f'<div class="axis"><span>{span_label(len(v), iv)}</span><span>now</span></div>'
-    cards = (f'<div class="gcard"><h3>CPU · {n} core{"s" if n != 1 else ""}</h3><div class="big">{cpu_now}</div>'
-             f'{sparkline(cpu, "CPU")}{axis(cpu)}</div>'
-             f'<div class="gcard"><h3>Memory</h3><div class="big">{mem_now} <small>{e(human(used))} used of {e(human(total * 1024))}</small></div>'
-             f'{stacked(mem, r.get("mem_cache", []), "Memory")}{axis(mem)}{mem_breakdown(r)}</div>')
+
+    def axis(v: Sequence[float]) -> str:
+        return f'<div class="axis"><span>{span_label(len(v), iv)}</span><span>now</span></div>'
+
+    cards = (
+        f'<div class="gcard"><h3>CPU · {n} core{"s" if n != 1 else ""}</h3><div class="big">{cpu_now}</div>'
+        f"{sparkline(cpu, 'CPU')}{axis(cpu)}</div>"
+        f'<div class="gcard"><h3>Memory</h3><div class="big">{mem_now} <small>{e(human(used))} used of {e(human(total * 1024))}</small></div>'
+        f"{stacked(mem, r.get('mem_cache', []), 'Memory')}{axis(mem)}{mem_breakdown(r)}</div>"
+    )
     tables = ""
     if r.get("top_cpu"):
-        tables = (f'<div class="graphs" style="margin-top:12px">{proc_table("Top by CPU", r["top_cpu"])}'
-                  f'{proc_table("Top by memory", r.get("top_mem", []))}</div>')
+        tables = (
+            f'<div class="graphs" style="margin-top:12px">{proc_table("Top by CPU", r["top_cpu"])}'
+            f"{proc_table('Top by memory', r.get('top_mem', []))}</div>"
+        )
     return f'<h2>Resources</h2><div class="graphs">{cards}</div>{tables}'
 
 
-def finding(data):
+def finding(data: Data) -> str | None:
     """The one thing most worth knowing right now, or None when all is well."""
     if data.get("failed"):
-        return f'{len(data["failed"])} failed unit(s): {", ".join(data["failed"][:3])}'
+        return f"{len(data['failed'])} failed unit(s): {', '.join(data['failed'][:3])}"
     for d in data.get("disks", []):
         if d["pct"] >= 90:
-            return f'{d["label"]} is {d["pct"]}% full'
-    r = data.get("resources") or {}
-    cpu = r.get("cpu", [])[-6:]
+            return f"{d['label']} is {d['pct']}% full"
+    r: Data = data.get("resources") or {}
+    cpu: list[float] = r.get("cpu", [])[-6:]
     if len(cpu) >= 6 and min(cpu) >= 75:
-        top = (r.get("top_cpu") or [{}])[0]
-        return f'CPU above 75% for the last minute' + (f', mostly {top["name"]}' if top.get("name") else "")
+        procs: list[Data] = r.get("top_cpu") or []
+        name: str = procs[0].get("name", "") if procs else ""
+        return "CPU above 75% for the last minute" + (f", mostly {name}" if name else "")
     if r.get("mem") and r["mem"][-1] >= 90:
-        return f'Memory is {r["mem"][-1]:.0f}% used by programs'
+        return f"Memory is {r['mem'][-1]:.0f}% used by programs"
     behind = [a["name"] for a in data.get("apps", []) if a.get("version") == "behind"]
     if behind:
-        return f'{len(behind)} app(s) behind their code'
+        return f"{len(behind)} app(s) behind their code"
     return None
 
 
-def page(data, hostname="omarchy", refresh=10):
-    s = data.get("system", {})
-    sub = []
+def page(data: Data, hostname: str = "omarchy", refresh: float = 10) -> str:
+    s: Data = data.get("system", {})
+    sub: list[str] = []
     if "uptime_s" in s:
         sub.append("up " + fmt_uptime(s["uptime_s"]))
     if "mem_total_kb" in s:
-        sub.append(f'{human((s["mem_total_kb"] - s["mem_avail_kb"]) * 1024)} of {human(s["mem_total_kb"] * 1024)} RAM in use')
+        sub.append(
+            f"{human((s['mem_total_kb'] - s['mem_avail_kb']) * 1024)} of {human(s['mem_total_kb'] * 1024)} RAM in use"
+        )
     if s.get("load"):
         sub.append("load " + " ".join(f"{x:.1f}" for x in s["load"]))
     f = finding(data)
@@ -212,7 +255,10 @@ def page(data, hostname="omarchy", refresh=10):
     if data.get("failed"):
         alerts += f'<div class="alert">Failed units: {e(", ".join(data["failed"]))}</div>'
     behind = [a["name"] for a in data.get("apps", []) if a.get("version") == "behind"]
-    apps = "".join(app_card(a) for a in data.get("apps", [])) or '<p class="sub">No apps yet. Add a snippet in <code>~/.config/caddy/sites/</code>.</p>'
+    apps = (
+        "".join(app_card(a) for a in data.get("apps", []))
+        or '<p class="sub">No apps yet. Add a snippet in <code>~/.config/caddy/sites/</code>.</p>'
+    )
     jobs = "".join(job_row(j) for j in data.get("jobs", []))
     disks = "".join(disk_row(d) for d in data.get("disks", []))
     return f"""<!doctype html>

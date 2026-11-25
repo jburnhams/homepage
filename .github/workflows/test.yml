@@ -5,10 +5,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix: { python: ["3.9", "3.13"] }
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "${{ matrix.python }}" }
-      - run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - uses: astral-sh/setup-uv@v7
+      # lockfile, ruff, ruff format, pyright strict, ty and the unit tests with coverage
+      - run: scripts/check

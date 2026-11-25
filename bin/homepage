@@ -1,4 +1,5 @@
 #!/bin/bash
-# Launcher: runs the homepage server with the project on the path (standard library only, any python3.9+).
+# Launcher: runs the homepage server from its locked environment (needs uv; the first run builds .venv from uv.lock).
+export PATH="$HOME/.local/bin:$PATH"   # where uv usually is, and a systemd user unit does not have it
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec env PYTHONPATH="$ROOT/src" python3 -m homepage "$@"
+exec uv run --locked --project "$ROOT" homepage "$@"

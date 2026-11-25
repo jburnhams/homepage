@@ -1,8 +1,18 @@
 """Collect the status shown on the page. Everything external goes through `run` so tests can fake it."""
+
 import datetime
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
+from typing import Any
+
+from strata_python import oslib
+
+from .snippets import AppInfo
+
+Runner = Callable[..., tuple[str, int]]
+Data = dict[str, Any]
 
 # (label, systemd user unit). Only units that exist are shown.
 JOBS = [
@@ -16,27 +26,27 @@ JOBS = [
 ]
 
 
-def run(cmd, timeout=5):
-    """(stdout, returncode); never raises."""
+def run(cmd: list[str], timeout: float = 5) -> tuple[str, int]:
+    """(stdout, returncode); never raises. The commands are a fixed list in this module, nothing from a request."""
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)  # noqa: S603
         return r.stdout.strip(), r.returncode
     except (OSError, subprocess.SubprocessError):
         return "", 127
 
 
-def _show(unit, props, runner):
-    out, rc = runner(["systemctl", "--user", "show", unit, "-p", ",".join(props)])
-    d = {}
+def _show(unit: str, props: list[str], runner: Runner) -> dict[str, str]:
+    out, _ = runner(["systemctl", "--user", "show", unit, "-p", ",".join(props)])
+    d: dict[str, str] = {}
     for line in out.splitlines():
         k, _, v = line.partition("=")
         d[k] = v
     return d
 
 
-def app_status(app, runner=run, state_dir=None, repos_dir=None):
+def app_status(app: AppInfo, runner: Runner = run, state_dir: str | None = None, repos_dir: str | None = None) -> Data:
     """Add state/started/version to an app dict (from snippets.load_apps)."""
-    a = dict(app)
+    a: Data = dict(app)
     a["state"] = ""
     a["version"] = ""
     if a.get("unit"):
@@ -58,26 +68,42 @@ def app_status(app, runner=run, state_dir=None, repos_dir=None):
     return a
 
 
-def job_status(runner=run):
-    jobs = []
+def job_status(runner: Runner = run) -> list[Data]:
+    jobs: list[Data] = []
     for label, unit in JOBS:
-        d = _show(unit + ".service", ["LoadState", "Result", "ActiveState", "ExecMainExitTimestamp", "ExecMainStatus"], runner)
+        d = _show(
+            unit + ".service",
+            ["LoadState", "Result", "ActiveState", "ExecMainExitTimestamp", "ExecMainStatus"],
+            runner,
+        )
         if d.get("LoadState") != "loaded":
             continue
         t = _show(unit + ".timer", ["NextElapseUSecRealtime"], runner)
-        jobs.append(dict(label=label, unit=unit, result=d.get("Result", ""), active=d.get("ActiveState", ""),
-                         last=d.get("ExecMainExitTimestamp", ""), next=t.get("NextElapseUSecRealtime", "")))
+        jobs.append(
+            {
+                "label": label,
+                "unit": unit,
+                "result": d.get("Result", ""),
+                "active": d.get("ActiveState", ""),
+                "last": d.get("ExecMainExitTimestamp", ""),
+                "next": t.get("NextElapseUSecRealtime", ""),
+            }
+        )
     return jobs
 
 
-def failed_units(runner=run):
+def failed_units(runner: Runner = run) -> list[str]:
     out, _ = runner(["systemctl", "--user", "--failed", "--no-legend", "--plain"])
-    return [l.split()[0] for l in out.splitlines() if l.strip()]
+    return [line.split()[0] for line in out.splitlines() if line.strip()]
 
 
-def disks(paths=None):
-    paths = paths or [("Root (NVMe)", "/"), ("Mirror disk", "/srv/mirror"), ("Server share (~/data)", os.path.expanduser("~/data"))]
-    res = []
+def disks(paths: list[tuple[str, str]] | None = None) -> list[Data]:
+    paths = paths or [
+        ("Root (NVMe)", "/"),
+        ("Mirror disk", "/srv/mirror"),
+        ("Server share (~/data)", os.path.expanduser("~/data")),
+    ]
+    res: list[Data] = []
     for label, p in paths:
         if p != "/" and not os.path.ismount(p):
             continue
@@ -85,29 +111,33 @@ def disks(paths=None):
             u = shutil.disk_usage(p)
         except OSError:
             continue
-        res.append(dict(label=label, path=p, total=u.total, used=u.used, pct=round(100 * u.used / u.total) if u.total else 0))
+        pct = round(100 * u.used / u.total) if u.total else 0
+        res.append({"label": label, "path": p, "total": u.total, "used": u.used, "pct": pct})
     return res
 
 
-def system():
-    d = {}
+def system() -> Data:
+    d: Data = {}
     try:
         with open("/proc/uptime") as fh:
             d["uptime_s"] = int(float(fh.read().split()[0]))
-        d["load"] = os.getloadavg()
-        mem = {l.split(":")[0]: int(l.split()[1]) for l in open("/proc/meminfo") if ":" in l}
+        with open("/proc/meminfo") as fh:
+            mem = {line.split(":")[0]: int(line.split()[1]) for line in fh if ":" in line}
         d["mem_total_kb"], d["mem_avail_kb"] = mem["MemTotal"], mem["MemAvailable"]
     except (OSError, KeyError, ValueError, IndexError):
         pass
+    load = oslib.load_average()
+    if load:
+        d["load"] = load
     return d
 
 
-def collect(apps, state_dir, repos_dir, runner=run):
-    return dict(
-        generated=datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        apps=[app_status(a, runner, state_dir, repos_dir) for a in apps],
-        jobs=job_status(runner),
-        failed=failed_units(runner),
-        disks=disks(),
-        system=system(),
-    )
+def collect(apps: list[AppInfo], state_dir: str, repos_dir: str, runner: Runner = run) -> Data:
+    return {
+        "generated": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "apps": [app_status(a, runner, state_dir, repos_dir) for a in apps],
+        "jobs": job_status(runner),
+        "failed": failed_units(runner),
+        "disks": disks(),
+        "system": system(),
+    }
