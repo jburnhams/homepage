@@ -45,6 +45,9 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S310", "S104", "S105", "S106", "S108", "S603", "S607"]
 
+# perfstats.py came from main as it was written; its `dict(...)` calls and `zip`s are kept so the diff stays reviewable
+"src/homepage/perfstats.py" = ["C408", "B905", "SIM", "RUF005", "E741", "UP031"]
+
 [tool.pyright]
 include = ["src"]
 pythonVersion = "3.11"

@@ -7,14 +7,14 @@ from collections.abc import Sequence
 
 from strata_python import cli, web
 
-from . import __version__, render, resources
+from . import __version__, perfstats, render, resources
 from .server import Status, create_app
 from .settings import SETTINGS
 
 PORT = 8365
 
 
-def _status(*, live: bool) -> tuple[Status, str]:
+def _status(*, live: bool) -> tuple[Status, str, perfstats.Perf]:
     sampler = resources.Sampler()
     if live:
         sampler.start()
@@ -22,17 +22,18 @@ def _status(*, live: bool) -> tuple[Status, str]:
         sampler.sample()
     host = socket.gethostname()
     status = Status(SETTINGS.get("sites"), SETTINGS.get("state"), SETTINGS.get("repos"), sampler=sampler, hostname=host)
-    return status, host
+    perf = perfstats.Perf(SETTINGS.get("perf"), mem_total_gb=lambda: resources.read_mem().get("total_kb", 0) / 1048576)
+    return status, host, perf
 
 
 def _serve(host: str, port: int) -> None:
-    status, hostname = _status(live=True)
-    web.serve(create_app(status, hostname), ["--host", host, "--port", str(port)], default_port=PORT)
+    status, hostname, perf = _status(live=True)
+    web.serve(create_app(status, hostname, perf=perf), ["--host", host, "--port", str(port)], default_port=PORT)
 
 
 def _print(_args: argparse.Namespace) -> int:
-    status, hostname = _status(live=False)
-    sys.stdout.write(render.page(status.get(), hostname) + "\n")
+    status, hostname, perf = _status(live=False)
+    sys.stdout.write(render.page(status.get(), hostname, perf=perf.get("24h")) + "\n")
     return 0
 
 

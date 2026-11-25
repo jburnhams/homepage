@@ -238,7 +238,44 @@ def finding(data: Data) -> str | None:
     return None
 
 
-def page(data: Data, hostname: str = "omarchy", refresh: float = 10) -> str:
+def perf_section(perf: Data | None) -> str:
+    """The same numbers as the page's "Over time" section, for one window, as plain tables."""
+    if not perf:
+        return ""
+    if not perf.get("available"):
+        return (
+            "<h2>Over time</h2><p class='sub'>No performance data yet. It is written by <code>perf-sample</code>.</p>"
+        )
+    rows = "".join(
+        f"<tr><td>{e(r['label'])}</td><td>{e(perf_val(r, r['mean']))}</td><td>{e(perf_val(r, r['p95']))}</td>"
+        f"<td>{e(perf_val(r, r['max']))}</td><td>{'' if r['stressed_pct'] is None else str(round(r['stressed_pct'])) + '%'}</td></tr>"
+        for r in perf["resources"]
+    )
+    svc = "".join(
+        f"<tr><td>{e(s['name'])}{(' <span class=d>' + e(s['label']) + '</span>') if s['label'] else ''}</td><td>{s['cpu_hours']:.2f}</td>"
+        f"<td>{s['ram_gb']:.1f} GB</td><td>{s['written_gb']:.1f} GB</td><td>{s['gpu_mib']} MiB</td></tr>"
+        for s in perf["services"]
+    )
+    return (
+        f"<h2>Over time: {e(perf['label'])}</h2><p class='sub'>{e(perf['verdict'])}</p>"
+        "<table class='jobs'><tr><th>Resource</th><th>Average</th><th>Busy (p95)</th><th>Peak</th><th>Over limit</th></tr>"
+        + rows
+        + "</table>"
+        + (
+            "<h2>Who used it</h2><table class='jobs'><tr><th>Service</th><th>CPU core-hours</th><th>Peak RAM</th><th>Written</th><th>GPU memory</th></tr>"
+            + svc
+            + "</table>"
+            if svc
+            else ""
+        )
+    )
+
+
+def perf_val(r: Data, v: float) -> str:
+    return f"{v:g} {r['unit']}" if r["unit"] != "%" else f"{v:.0f}%"
+
+
+def page(data: Data, hostname: str = "omarchy", refresh: float = 10, perf: Data | None = None) -> str:
     s: Data = data.get("system", {})
     sub: list[str] = []
     if "uptime_s" in s:
@@ -269,6 +306,7 @@ def page(data: Data, hostname: str = "omarchy", refresh: float = 10) -> str:
 {alerts}
 <h2>Apps</h2><div class="grid">{apps}</div>
 {resources_section(data.get("resources"))}
+{perf_section(perf)}
 {"<h2>Jobs</h2><table class='jobs'><tr><th>Job</th><th>Last result</th><th>Last run</th><th>Next</th></tr>" + jobs + "</table>" if jobs else ""}
 {"<h2>Storage</h2><table class='jobs'><tr><th>Disk</th><th></th><th>Used</th><th></th></tr>" + disks + "</table>" if disks else ""}
 <footer>Updated {e(data.get("generated", "")[11:16])}

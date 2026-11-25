@@ -3,6 +3,7 @@ import { Pause, Play } from "lucide-react";
 import { Button, ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, Skeleton, StaleNotice, Status, TableSkeleton, type Column } from "strata-react";
 import { Apps } from "@/components/apps";
 import { Memory } from "@/components/memory";
+import { OverTime } from "@/components/over-time";
 import { ago, format, kb, percent, systemdTime, uptime } from "@/lib/format";
 import type { Disk, Job, Proc, Resources, Status as Data } from "./types";
 import { useStatus } from "./use-status";
@@ -156,6 +157,10 @@ function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause:
           <Charts r={r} />
         </Section>
       )}
+
+      <Section title="Over time">
+        <OverTime paused={paused} />
+      </Section>
 
       {r && r.top_cpu.length > 0 && (
         <Section title="Top processes">

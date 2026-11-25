@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from homepage import collect, server
+from homepage import collect, perfstats, server
 
 LiveApp = Callable[[FastAPI], AbstractContextManager[str]]
 
@@ -26,9 +26,9 @@ def get(base: str, path: str) -> tuple[int, str, str]:
         return ex.code, ex.headers.get("Content-Type", ""), ex.read().decode()
 
 
-def make(tmp_path: Path, dist: str, runner: collect.Runner = silent) -> FastAPI:
+def make(tmp_path: Path, dist: str, runner: collect.Runner = silent, perf: perfstats.Perf | None = None) -> FastAPI:
     st = server.Status(str(tmp_path), str(tmp_path), str(tmp_path), runner=runner, hostname="testhost")
-    return server.create_app(st, "testhost", dist=dist)
+    return server.create_app(st, "testhost", dist=dist, perf=perf)
 
 
 def test_without_a_build_the_page_is_server_rendered(tmp_path: Path, live_app: LiveApp):
@@ -79,7 +79,23 @@ def test_health_system_and_settings_come_from_strata_python(tmp_path: Path, live
         assert health["ok"] is True
         system = json.loads(get(base, "/_home/api/system")[2])
         assert {f["name"] for f in system["folders"]} == {"sites", "state", "repos"}
-        assert set(json.loads(get(base, "/_home/api/settings")[2])) == {"sites", "state", "repos"}
+        assert set(json.loads(get(base, "/_home/api/settings")[2])) == {"sites", "state", "repos", "perf"}
+
+
+def test_perf_window_param_and_missing_data(tmp_path: Path, live_app: LiveApp):
+    empty = tmp_path / "perf"
+    empty.mkdir()
+    app = make(tmp_path, str(tmp_path / "no-dist"), perf=perfstats.Perf(str(empty)))
+    with live_app(app) as base:
+        assert json.loads(get(base, "/_home/api/perf?window=1h")[2])["window"] == "1h"
+        assert not json.loads(get(base, "/_home/api/perf?window=7d")[2])["available"]  # empty folder: says so
+        assert json.loads(get(base, "/_home/api/perf?window=../../etc")[2])["window"] == "24h"  # never reaches the disk
+        assert "No performance data yet" in get(base, "/_home/plain")[2]
+
+
+def test_perf_without_a_sampler_says_so(tmp_path: Path, live_app: LiveApp):
+    with live_app(make(tmp_path, str(tmp_path / "no-dist"))) as base:
+        assert not json.loads(get(base, "/_home/api/perf")[2])["available"]
 
 
 def test_status_is_collected_at_most_every_ttl(tmp_path: Path):

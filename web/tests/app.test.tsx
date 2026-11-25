@@ -4,14 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { renderWithStrata } from "strata-react/testing";
 import { App } from "@/src/app";
-import { server, status, statusUrl } from "./server";
+import { perf, perfUrl, server, status, statusUrl } from "./server";
 
 describe("the home server page", () => {
   it("shows the host, its default finding and every section", async () => {
     renderWithStrata(<App />);
     expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
     expect(screen.getByText(/All good: every app is up/)).toBeInTheDocument();
-    for (const name of ["Resources", "Top processes", "Apps", "Jobs", "Storage"]) {
+    for (const name of ["Resources", "Over time", "Top processes", "Apps", "Jobs", "Storage"]) {
       expect(screen.getByRole("heading", { name })).toBeInTheDocument();
     }
     expect(screen.getByRole("grid", { name: "Top processes by CPU" })).toHaveTextContent("firefox");
@@ -89,5 +89,39 @@ describe("the home server page", () => {
     await userEvent.click(pause);
     expect(screen.getByRole("button", { name: "Resume updates" })).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(screen.getByRole("button", { name: "Resume updates" })).toBeEnabled());
+  });
+});
+
+describe("the over-time section", () => {
+  it("opens on the last hour with the server's verdict, a word for each limit and who was busy", async () => {
+    renderWithStrata(<App />);
+    expect(await screen.findByText(/Programs waiting for memory was the tightest in the last hour/)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Last hour", selected: true })).toBeInTheDocument();
+    const table = screen.getByRole("grid", { name: "Resources over the period" });
+    expect(table).toHaveTextContent("Often 12%");      // 12% of the time over its limit is named, not just coloured
+    expect(table).toHaveTextContent("Fine");
+    expect(screen.getByText(/Programs waited for memory for 7 min/)).toHaveTextContent("strata-models 80%");
+    expect(screen.getByRole("grid", { name: "Services and jobs by use" })).toHaveTextContent("claude-remote-control [docs:python]");
+  });
+
+  it("asks the server for the day when that tab is chosen", async () => {
+    const asked: string[] = [];
+    server.use(http.get(perfUrl, ({ request }) => {
+      const w = new URL(request.url).searchParams.get("window") as "1h" | "24h" | "7d";
+      asked.push(w);
+      return HttpResponse.json(perf(w));
+    }));
+    renderWithStrata(<App />);
+    await screen.findByText(/tightest in the last hour/);
+    await userEvent.click(screen.getByRole("tab", { name: "24 hours" }));
+    await waitFor(() => expect(asked).toContain("24h"));
+    expect(screen.getByRole("tab", { name: "24 hours", selected: true })).toBeInTheDocument();
+  });
+
+  it("says so when there is no history yet, and keeps the rest of the page", async () => {
+    server.use(http.get(perfUrl, () => HttpResponse.json({ available: false, window: "1h", label: "last hour" })));
+    renderWithStrata(<App />);
+    expect(await screen.findByText("No history yet")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Apps" })).toBeInTheDocument();
   });
 });

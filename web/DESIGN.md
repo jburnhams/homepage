@@ -20,3 +20,4 @@ Components come from strata-react. Follows `ux-research/ux-design/skill/assets/D
   No illustrations, no emoji.
 - **Not chosen**: sparklines on every metric, gradient or filled areas, a coloured sidebar, a
   stacked-area memory history (the composition is the bar and table; the trend is the line).
+- **Over time** (added 2026-11-25): the question is "where did the machine's time go?". Tabs for last hour, 24 hours and week; the server's one-sentence verdict first, then four charts (CPU, memory, busiest disk, GPU), then a table where every resource has a word for how often it was over its limit ("Fine", "Sometimes 8 %", "Often 12 %"), then who was running when programs waited, then services by use. Charts use the same 2px line as above; no stacked areas. On a phone the tables keep the name, the verdict word and the main figure.

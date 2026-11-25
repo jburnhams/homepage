@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from strata_python import web
 
-from . import __version__, collect, render, resources, snippets
+from . import __version__, collect, perfstats, render, resources, snippets
 from .settings import SETTINGS
 
 WEB_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web", "dist")
@@ -76,7 +76,7 @@ class Status:
         return data
 
 
-def create_app(status: Status, hostname: str, dist: str = WEB_DIST) -> FastAPI:
+def create_app(status: Status, hostname: str, dist: str = WEB_DIST, perf: perfstats.Perf | None = None) -> FastAPI:
     commit = web.source_commit(__file__)
     app = web.base_app("homepage", __version__, SETTINGS, commit=commit)
     web.add_error_handlers(app)
@@ -101,9 +101,16 @@ def create_app(status: Status, hostname: str, dist: str = WEB_DIST) -> FastAPI:
     def get_status() -> collect.Data:  # pyright: ignore[reportUnusedFunction]
         return status.get()
 
+    @app.get("/api/perf")
+    def get_perf(window: str = "24h") -> perfstats.Summary:  # pyright: ignore[reportUnusedFunction]
+        """1h, 24h or 7d, from the files perf-sample writes; anything else is 24h, and no files says so."""
+        if perf is None:
+            return {"available": False, "window": "24h", "label": ""}
+        return perf.get(window)
+
     @app.get("/plain", response_class=HTMLResponse, include_in_schema=False)
     def plain() -> str:  # pyright: ignore[reportUnusedFunction]
-        return render.page(status.get(), hostname)
+        return render.page(status.get(), hostname, perf=perf.get("24h") if perf else None)
 
     if not os.path.isfile(os.path.join(dist, "index.html")):  # no build: the server-rendered page is the page
         app.add_api_route("/", plain, response_class=HTMLResponse, include_in_schema=False)

@@ -27,8 +27,23 @@ export function systemdTime(ts: string): string {
   return `${da} ${months[Number(mo) - 1] ?? mo} ${time.slice(0, 5)}`;
 }
 
-/** Seconds ago as a chart tick label: "now", "−30 s", "−2 min". */
+/** Seconds ago as a chart tick label: "now", "−30 s", "−2 min", "−6 h", "−3 d". */
 export function ago(seconds: number): string {
   if (seconds <= 0) return "now";
-  return seconds < 90 ? `−${Math.round(seconds)}${NBSP}s` : `−${Math.round(seconds / 60)}${NBSP}min`;
+  if (seconds < 90) return `−${Math.round(seconds)}${NBSP}s`;
+  if (seconds < 90 * 60) return `−${Math.round(seconds / 60)}${NBSP}min`;
+  if (seconds < 36 * 3600) return `−${Math.round(seconds / 3600)}${NBSP}h`;
+  return `−${Math.round(seconds / 86400)}${NBSP}d`;
+}
+
+/** A reading with its unit: "42 %", "12.3 GB", "5.0 MB/s". */
+export function measure(v: number, unit: string): string {
+  return unit === "%" ? percent(v) : `${format.decimal(v)}${NBSP}${unit}`;
+}
+
+/** A length of time in words: "16 min", "3.5 h", "2.0 days". */
+export function duration(s: number): string {
+  if (s < 5400) return `${Math.round(s / 60)}${NBSP}min`;
+  if (s < 172800) return `${format.decimal(s / 3600)}${NBSP}h`;
+  return `${format.decimal(s / 86400)}${NBSP}days`;
 }

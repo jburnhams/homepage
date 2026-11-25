@@ -40,7 +40,7 @@ Design decisions and their reasons: `web/DESIGN.md`.
 bin/homepage serve [--port 8365]       # the server (uv run --locked homepage; the first run builds .venv)
 bin/homepage print                     # the plain page on stdout
 bin/homepage doctor                    # imports and the programs it needs (systemctl, git)
-bin/homepage set sites ~/x             # settings: sites, state, repos (also HOMEPAGE_SITES etc.)
+bin/homepage set sites ~/x             # settings: sites, state, repos, perf (also HOMEPAGE_SITES etc.)
 scripts/check                          # the gate: ruff, pyright strict, ty, tests with coverage
 ```
 Systemd data is read with `systemctl --user ...` (a fixed command list, nothing from the request reaches a shell), cached for 10 s however many people look.
