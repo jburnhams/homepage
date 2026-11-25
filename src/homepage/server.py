@@ -8,13 +8,16 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import collect, render, resources, snippets
+from urllib.parse import parse_qs
+
+from . import collect, perfstats, render, resources, snippets
 
 HOME = os.path.expanduser("~")
 DEFAULTS = dict(
     sites=os.path.join(HOME, ".config/caddy/sites"),
     state=os.path.join(HOME, ".local/state/app-refresh"),
     repos=os.path.join(HOME, "code/github"),
+    perf=os.path.join(HOME, ".local/share/perf-stats"),     # written by perf-sample; absent -> the page says so
 )
 WEB_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "web", "dist")
 PREFIX = "/_home"          # Caddy forwards /_home/* as well as /, the prefix is stripped here
@@ -43,7 +46,7 @@ class Status:
         return data
 
 
-def make_handler(status, hostname, dist=WEB_DIST):
+def make_handler(status, hostname, dist=WEB_DIST, perf=None):
     assets = {}
     if os.path.isdir(dist):          # the built front end, committed in web/dist; absent -> server-rendered page
         assets = {n: os.path.join(dist, n) for n in os.listdir(dist) if os.path.isfile(os.path.join(dist, n))}
@@ -62,7 +65,7 @@ def make_handler(status, hostname, dist=WEB_DIST):
             self.wfile.write(b)
 
         def do_GET(self):
-            path = self.path.split("?", 1)[0]
+            path, _, query = self.path.partition("?")
             if path.startswith(PREFIX):
                 path = path[len(PREFIX):] or "/"
             try:
@@ -71,11 +74,15 @@ def make_handler(status, hostname, dist=WEB_DIST):
                 elif path == "/" and "index.html" in assets:
                     self._send(200, open(assets["index.html"], "rb").read(), "text/html; charset=utf-8")
                 elif path in ("/", "/plain"):       # no JavaScript needed, refreshes itself
-                    self._send(200, render.page(status.get(), hostname), "text/html; charset=utf-8")
+                    self._send(200, render.page(status.get(), hostname, perf=perf.get("24h") if perf else None), "text/html; charset=utf-8")
                 elif path.startswith("/") and path[1:] in assets and path[1:] != "index.html":
                     name = path[1:]                  # only names listed in dist/, never a path from the request
                     ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
                     self._send(200, open(assets[name], "rb").read(), ctype + "; charset=utf-8" if ctype.startswith("text/") or ctype.endswith("javascript") else ctype)
+                elif path == "/api/perf":           # ?window=1h|24h|7d, anything else is 24h
+                    window = (parse_qs(query).get("window") or ["24h"])[0]
+                    data = perf.get(window) if perf else dict(available=False, window="24h", label="")
+                    self._send(200, json.dumps(data), "application/json")
                 elif path == "/api/status":
                     self._send(200, json.dumps(status.get(), indent=1, default=str), "application/json")
                 else:
@@ -101,9 +108,10 @@ def main(argv=None):
     host = socket.gethostname()
     st = Status(a.sites, a.state, a.repos, sampler=sampler, hostname=host)
     if a.command == "print":
-        print(render.page(st.get(), host))
+        print(render.page(st.get(), host, perf=perfstats.Perf(a.perf, mem_total_gb=lambda: resources.read_mem().get("total_kb", 0) / 1048576).get("24h")))
         return 0
-    srv = ThreadingHTTPServer((a.host, a.port), make_handler(st, host))
+    perf = perfstats.Perf(a.perf, mem_total_gb=lambda: resources.read_mem().get("total_kb", 0) / 1048576)
+    srv = ThreadingHTTPServer((a.host, a.port), make_handler(st, host, perf=perf))
     print("homepage on http://%s:%d" % (a.host, a.port), flush=True)
     try:
         srv.serve_forever()

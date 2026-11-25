@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { Status } from "@/src/types";
+import type { Perf, Status } from "@/src/types";
 
 export const status: Status = {
   generated: "2026-11-07T12:00:00+00:00",
@@ -23,9 +23,38 @@ export const status: Status = {
 };
 
 export const statusUrl = "/_home/api/status";
+export const perfUrl = "/_home/api/perf";
+
+const line = (seconds: number, f: (i: number) => number) =>
+  Array.from({ length: 24 }, (_, i) => ({ x: -Math.round(seconds * (1 - i / 23)), y: f(i) }));
+
+export const perf = (window: "1h" | "24h" | "7d" = "1h"): Perf => {
+  const seconds = { "1h": 3600, "24h": 86400, "7d": 604800 }[window];
+  return {
+    available: true, window, label: { "1h": "last hour", "24h": "last 24 hours", "7d": "last week" }[window],
+    samples: 360, covered_s: Math.min(seconds, 3600), start: "2026-11-25T11:00:00", end: "2026-11-25T12:00:00", mem_total_gb: 32,
+    verdict: "Programs waiting for memory was the tightest in the last hour: over its limit 12% of the time, mostly strata-models.",
+    resources: [
+      { key: "cpu", label: "CPU busy, all threads", unit: "%", mean: 20, p95: 60, max: 90, threshold: 80, stressed_pct: 0.4 },
+      { key: "mem_wait", label: "Programs waiting for memory", unit: "%", mean: 5, p95: 30, max: 45, threshold: 10, stressed_pct: 12 },
+      { key: "disk_sda", label: "Disk sda busy", unit: "%", mean: 1, p95: 8, max: 50, threshold: 80, stressed_pct: 4 },
+      { key: "mem", label: "Memory in use", unit: "GB", mean: 18.2, p95: 25, max: 28.4, threshold: 28.8, stressed_pct: 0 },
+      { key: "net_rx", label: "Network in (eno1)", unit: "MB/s", mean: 0.3, p95: 1.7, max: 2.4, threshold: 90, stressed_pct: 0 },
+    ],
+    services: [
+      { name: "strata-models", label: "", cpu_hours: 3.2, ram_gb: 18.1, swap_gb: 4.3, written_gb: 0.4, read_gb: 0, gpu_mib: 9930 },
+      { name: "claude-remote-control", label: "docs:python", cpu_hours: 0.5, ram_gb: 2.4, swap_gb: 0, written_gb: 1.2, read_gb: 1.5, gpu_mib: 0 },
+    ],
+    pressure: [{ resource: "memory", minutes: 7, who: [{ name: "strata-models", label: "", share: 80 }, { name: "claude-remote-control", label: "docs:python", share: 20 }] }],
+    series: { cpu: line(seconds, (i) => 10 + i), mem: line(seconds, (i) => 16 + i / 4), disk: line(seconds, () => 3), gpu: line(seconds, () => 0) },
+  };
+};
 
 /** The healthy server: the handlers the unit tests and the visual shots both start from. */
-export const handlers = [http.get(statusUrl, () => HttpResponse.json(status))];
+export const handlers = [
+  http.get(statusUrl, () => HttpResponse.json(status)),
+  http.get(perfUrl, ({ request }) => HttpResponse.json(perf((new URL(request.url).searchParams.get("window") ?? "1h") as "1h" | "24h" | "7d"))),
+];
 
 // Server states for the visual shots (and reusable in tests).
 export const statusLoading = http.get(statusUrl, () => new Promise<never>(() => {}));
