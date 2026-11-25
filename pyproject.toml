@@ -1,0 +1,54 @@
+[project]
+name = "homepage"
+version = "0.1.0"
+description = "Landing page and status board of a small home server, and the login in front of its apps"
+requires-python = ">=3.11"
+dependencies = [
+    "strata-python>=0.2,<0.3",   # brings FastAPI, uvicorn and pydantic; while 0.x, cap below the next minor
+]
+
+[dependency-groups]
+dev = ["strata-python[dev]"]     # ruff, pyright, ty, httpx and the pytest plugins at the versions strata-check expects
+
+[project.scripts]
+homepage = "homepage.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/homepage"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+addopts = "-ra --timeout=300 --strict-markers --strict-config"
+strata_env_prefix = "HOMEPAGE"
+
+[tool.coverage.run]
+source = ["src/homepage"]
+omit = ["*/__main__.py"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+fail_under = 90
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C4", "PT", "S"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S310", "S104", "S105", "S106", "S108", "S603", "S607"]
+
+# perfstats.py came from main as it was written; its `dict(...)` calls and `zip`s are kept so the diff stays reviewable
+"src/homepage/perfstats.py" = ["C408", "B905", "SIM", "RUF005", "E741", "UP031"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"

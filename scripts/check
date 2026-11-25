@@ -1,0 +1,4 @@
+#!/bin/bash
+# The one gate (lockfile, ruff, ruff format, pyright strict, ty, unit tests with coverage): scripts/check [--fast|--fix]
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$DIR/.." && exec uv run --locked strata-check "$@"

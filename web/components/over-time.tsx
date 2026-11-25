@@ -1,6 +1,6 @@
 import * as React from "react";
 import { DataTable, DataView, EmptyState, LineChart, Skeleton, Status, Tabs, type Column } from "strata-react";
-import { ago, bytes, duration, measure, percent } from "@/lib/format";
+import { ago, duration, format, measure, percent } from "@/lib/format";
 import type { Perf, PerfPoint, PerfPressure, PerfResource, PerfService, PerfWindow } from "@/src/types";
 import { usePerf } from "@/src/use-perf";
 
@@ -53,7 +53,7 @@ const serviceColumns: Col<PerfService>[] = [
   { key: "cpu", header: "CPU hours", numeric: true, cell: (s) => s.cpu_hours.toFixed(2), sort: (a, b) => a.cpu_hours - b.cpu_hours },
   { key: "ram", header: "Memory", numeric: true, cell: (s) => measure(s.ram_gb, "GB"), sort: (a, b) => a.ram_gb - b.ram_gb },
   { key: "written", header: "Disk written", numeric: true, cell: (s) => measure(s.written_gb, "GB"), phone: false },
-  { key: "gpu", header: "GPU memory", numeric: true, cell: (s) => (s.gpu_mib ? bytes(s.gpu_mib * 1024 * 1024) : "–"), phone: false },
+  { key: "gpu", header: "GPU memory", numeric: true, cell: (s) => (s.gpu_mib ? format.bytes(s.gpu_mib * 1024 * 1024) : "–"), phone: false },
 ];
 
 const resourceWord = { memory: "memory", disk: "disk", cpu: "a CPU" } as const;
@@ -125,15 +125,12 @@ function Panel({ perf, seconds }: { perf: Perf; seconds: number }) {
 }
 
 function WindowPanel({ window, paused }: { window: PerfWindow; paused: boolean }) {
-  const { state, stale } = usePerf(window, paused);
+  const state = usePerf(window, paused);
   const seconds = WINDOWS.find((w) => w.value === window)!.seconds;
   return (
-    <div className="grid gap-3">
-      {stale && <p className="type-body-sm text-danger">{stale} Showing the last readings.</p>}
-      <DataView state={state} isEmpty={() => false} skeleton={<Skeleton className="h-64 w-full" />} empty={null}>
-        {(perf) => <Panel perf={perf} seconds={seconds} />}
-      </DataView>
-    </div>
+    <DataView state={state} isEmpty={() => false} skeleton={<Skeleton className="h-64 w-full" />} empty={null}>
+      {(perf) => <Panel perf={perf} seconds={seconds} />}
+    </DataView>
   );
 }
 

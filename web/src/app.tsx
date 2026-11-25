@@ -1,10 +1,10 @@
 import * as React from "react";
 import { Pause, Play } from "lucide-react";
-import { Button, DataTable, DataView, EmptyState, LineChart, Metric, MetricStrip, PageHeader, Skeleton, Status, TableSkeleton, type Column } from "strata-react";
-import { AppCard } from "@/components/app-card";
-import { MemoryBreakdown } from "@/components/memory-breakdown";
+import { Button, ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, Skeleton, StaleNotice, Status, TableSkeleton, type Column } from "strata-react";
+import { Apps } from "@/components/apps";
+import { Memory } from "@/components/memory";
 import { OverTime } from "@/components/over-time";
-import { ago, bytes, clock, kb, percent, systemdTime, uptime } from "@/lib/format";
+import { ago, format, kb, percent, systemdTime, uptime } from "@/lib/format";
 import type { Disk, Job, Proc, Resources, Status as Data } from "./types";
 import { useStatus } from "./use-status";
 
@@ -13,7 +13,7 @@ const POLL_MS = 5000;
 const procColumns: Column<Proc>[] = [
   { key: "name", header: "Process", cell: (p) => p.name, truncate: true, sort: (a, b) => a.name.localeCompare(b.name) },
   { key: "cpu", header: "CPU", numeric: true, cell: (p) => percent(p.cpu), sort: (a, b) => a.cpu - b.cpu },
-  { key: "rss", header: "Memory", numeric: true, cell: (p) => bytes(p.rss), sort: (a, b) => a.rss - b.rss },
+  { key: "rss", header: "Memory", numeric: true, cell: (p) => format.bytes(p.rss), sort: (a, b) => a.rss - b.rss },
 ];
 
 const jobColumns: Column<Job>[] = [
@@ -34,20 +34,31 @@ const jobColumns: Column<Job>[] = [
   { key: "next", header: "Next", cell: (j) => systemdTime(j.next) },
 ];
 
-const diskColumns: Column<Disk>[] = [
-  { key: "label", header: "Disk", cell: (d) => d.label },
-  {
-    key: "bar",
-    header: "Used",
-    cell: (d) => (
-      <div role="img" aria-label={`${d.pct}% used`} className="h-2 w-24 overflow-hidden rounded-control bg-muted">
-        <div className={d.pct >= 90 ? "h-full bg-danger" : d.pct >= 80 ? "h-full bg-warning" : "h-full bg-primary"} style={{ width: `${d.pct}%` }} />
-      </div>
-    ),
-  },
-  { key: "size", header: "Size", numeric: true, cell: (d) => `${bytes(d.used)} of ${bytes(d.total)}`, className: "max-sm:hidden" },
-  { key: "pct", header: "Full", numeric: true, cell: (d) => percent(d.pct) },
+// Disks are levels, not rows of a table: a Meter per disk, with the same two limits for all of them
+// (shares of the disk's size) so a full disk names its state in words as well as colour.
+const DISK_LIMITS = [
+  { at: 0.8, tone: "warning" as const, label: "Filling up" },
+  { at: 0.9, tone: "danger" as const, label: "Nearly full" },
 ];
+
+function Disks({ disks }: { disks: Disk[] }) {
+  return (
+    <ul aria-label="Disk use" className="grid gap-x-8 gap-y-5 md:grid-cols-2">
+      {disks.map((d) => (
+        <li key={d.path} className="grid">
+          <Meter
+            label={d.label}
+            value={d.used}
+            max={d.total}
+            valueText={`${percent(d.pct)} used`}
+            detail={`${format.bytes(d.used)} of ${format.bytes(d.total)}`}
+            thresholds={DISK_LIMITS}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -102,13 +113,13 @@ function Charts({ r }: { r: Resources }) {
             />
           )}
         </div>
-        <MemoryBreakdown r={r} />
+        <Memory r={r} />
       </div>
     </div>
   );
 }
 
-function Page({ data, paused, onPause, stale }: { data: Data; paused: boolean; onPause: () => void; stale: string | null }) {
+function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause: () => void }) {
   const r = data.resources;
   const load = data.system.load;
   const cpu = r?.cpu.at(-1);
@@ -117,18 +128,19 @@ function Page({ data, paused, onPause, stale }: { data: Data; paused: boolean; o
     <div className="grid gap-8">
       <PageHeader
         title={data.hostname}
-        scope={[data.system.uptime_s !== undefined && `Up ${uptime(data.system.uptime_s)}`, `updated ${clock.format(new Date(data.generated))}`]
+        scope={[data.system.uptime_s !== undefined && `Up ${uptime(data.system.uptime_s)}`, `updated ${format.clock(new Date(data.generated))}`]
           .filter(Boolean)
           .join(" · ")}
         actions={
-          <Button size="sm" onClick={onPause} aria-pressed={paused}>
-            {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
-            {paused ? "Resume updates" : "Pause updates"}
-          </Button>
+          <>
+            <ColorSchemeChoice compact />
+            <Button size="sm" onClick={onPause} aria-pressed={paused}>
+              {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
+              {paused ? "Resume updates" : "Pause updates"}
+            </Button>
+          </>
         }
-        finding={{
-          text: stale ? <span className="text-danger">{stale} Showing the last readings.</span> : (data.finding ?? "All good: every app is up, nothing has failed, disks have room."),
-        }}
+        finding={{ text: data.finding ?? "All good: every app is up, nothing has failed, disks have room." }}
       />
 
       {r && (
@@ -161,9 +173,7 @@ function Page({ data, paused, onPause, stale }: { data: Data; paused: boolean; o
 
       <Section title="Apps">
         {data.apps.length ? (
-          <div className="grid gap-3 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
-            {data.apps.map((a) => <AppCard key={a.path} app={a} />)}
-          </div>
+          <Apps apps={data.apps} />
         ) : (
           <EmptyState title="No apps yet">Add a snippet to ~/.config/caddy/sites/ and it appears here.</EmptyState>
         )}
@@ -176,7 +186,7 @@ function Page({ data, paused, onPause, stale }: { data: Data; paused: boolean; o
       )}
       {data.disks.length > 0 && (
         <Section title="Storage">
-          <DataTable caption="Disk use" columns={diskColumns} rows={data.disks} rowKey={(d) => d.path} />
+          <Disks disks={data.disks} />
         </Section>
       )}
 
@@ -201,7 +211,7 @@ function PageSkeleton() {
 
 export function App() {
   const [paused, setPaused] = React.useState(false);
-  const { state, stale } = useStatus(POLL_MS, paused);
+  const state = useStatus(POLL_MS, paused);
   React.useEffect(() => {
     if (state.status === "ready") document.title = state.data.hostname;
   }, [state]);
@@ -212,8 +222,9 @@ export function App() {
         isEmpty={() => false}
         skeleton={<PageSkeleton />}
         empty={null}
+        staleNotice={(stale) => <StaleNotice stale={stale} shown={(when) => `Showing the last readings, from ${when}.`} />}
       >
-        {(data) => <Page data={data} paused={paused} onPause={() => setPaused((p) => !p)} stale={stale} />}
+        {(data) => <Page data={data} paused={paused} onPause={() => setPaused((p) => !p)} />}
       </DataView>
     </main>
   );

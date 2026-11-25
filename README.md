@@ -2,7 +2,7 @@
 
 The landing page and status board of a small home server: one page at `/` that lists the web apps behind the Caddy proxy and shows whether they are up, whether they run their latest code, how the nightly jobs went, and how full the disks are. Also holds `webauth`, the single login in front of every app.
 
-The server is Python standard library only (no dependencies). The page is a React + Tailwind front end (`web/`) built on [strata-react](https://github.com/jburnhams/strata-react) that polls the JSON every 5 s and draws live charts; its built output `web/dist/` is committed, so the machine needs no Node. `/plain` is the old server-rendered page with no JavaScript (a 10 s `<meta refresh>`), also the fallback if `web/dist` is missing. Runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
+The server is a FastAPI app on [strata-python](https://github.com/jburnhams/strata-python) (Python 3.11+, run with uv). The page is a React + Tailwind front end (`web/`) built on [strata-react](https://github.com/jburnhams/strata-react) that polls the JSON every 5 s and draws live charts; its built output `web/dist/` is committed, so the machine needs no Node. `/plain` is the old server-rendered page with no JavaScript (a 10 s `<meta refresh>`), also the fallback if `web/dist` is missing. Runs as a systemd user service on `127.0.0.1:8365`. Caddy puts the login in front of it.
 
 ```
 browser -> Caddy :80 -> forward_auth -> webauth :8361   (login, signed cookie)
@@ -24,7 +24,7 @@ The "running commit" is what `app-refresh` records in `~/.local/state/app-refres
 - jobs: last result, last run and next run of backup, syncs, app refresh, health check (only units that exist on the machine, list in `collect.JOBS`)
 - resources: CPU, and memory split into used / cached / buffers / free / swap, each with a rolling 15 min graph (sampled every 5 s from `/proc` by a background thread in `resources.py`, history is in memory and starts empty after a restart), top 6 processes by CPU and by memory (CPU 100% = one core)
 - failed user units (red box), uptime, memory, load, disks (root, mirror disk, server share)
-- `/_home/api/status`: the same data as JSON; `/healthz`
+- `/_home/api/status`: the same data as JSON; `/healthz`; and strata-python's shared `/_home/api/health`, `/_home/api/system` and `/_home/api/settings`
 
 ## Front end
 ```
@@ -37,9 +37,11 @@ Design decisions and their reasons: `web/DESIGN.md`.
 
 ## Run and test
 ```
-bin/homepage serve [--port 8365]       # the server
-bin/homepage print                     # the page on stdout
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+bin/homepage serve [--port 8365]       # the server (uv run --locked homepage; the first run builds .venv)
+bin/homepage print                     # the plain page on stdout
+bin/homepage doctor                    # imports and the programs it needs (systemctl, git)
+bin/homepage set sites ~/x             # settings: sites, state, repos, perf (also HOMEPAGE_SITES etc.)
+scripts/check                          # the gate: ruff, pyright strict, ty, tests with coverage
 ```
 Systemd data is read with `systemctl --user ...` (a fixed command list, nothing from the request reaches a shell), cached for 10 s however many people look.
 
