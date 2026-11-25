@@ -54,9 +54,13 @@ def test_jobs_only_existing_units():
             return "NextElapseUSecRealtime=Sun 2026-11-08 04:05:00 GMT", 0
         return "LoadState=not-found", 0
 
-    jobs = collect.job_status(runner)
+    jobs = collect.job_status([("Backup", "nightly-backup"), ("Sync", "work-sync")], runner)
     assert [j["unit"] for j in jobs] == ["work-sync"]
     assert (jobs[0]["result"], jobs[0]["next"]) == ("success", "Sun 2026-11-08 04:05:00 GMT")
+
+
+def test_no_jobs_configured_shows_none():
+    assert collect.job_status([], fake({})) == []
 
 
 def test_failed_units():
@@ -89,4 +93,6 @@ def test_system_reads_the_real_proc():
 
 def test_collect_assembles_everything(tmp_path: Path):
     data = collect.collect([], str(tmp_path), str(tmp_path), fake({}))
+    assert [d["path"] for d in data["disks"]] == ["/"]  # the default is the root disk alone
+    assert data["jobs"] == []
     assert set(data) == {"generated", "apps", "jobs", "failed", "disks", "system"}

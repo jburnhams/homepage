@@ -54,9 +54,12 @@ class Status:
         ttl: float = 10,
         sampler: resources.Sampler | None = None,
         hostname: str = "",
+        jobs: list[tuple[str, str]] | None = None,
+        disks: list[tuple[str, str]] | None = None,
     ) -> None:
         self.sites, self.state, self.repos, self.runner, self.ttl = sites, state, repos, runner, ttl
         self.sampler, self.hostname = sampler, hostname
+        self.jobs, self.disks = jobs or [], disks
         self._lock = threading.Lock()
         self._at = 0.0
         self._data: collect.Data | None = None
@@ -65,7 +68,7 @@ class Status:
         with self._lock:
             if self._data is None or time.monotonic() - self._at > self.ttl:
                 apps = snippets.load_apps(self.sites)
-                self._data = collect.collect(apps, self.state, self.repos, self.runner)
+                self._data = collect.collect(apps, self.state, self.repos, self.runner, self.jobs, self.disks)
                 self._at = time.monotonic()
             data = self._data
         # live numbers are never cached: the sampler already rate-limits itself

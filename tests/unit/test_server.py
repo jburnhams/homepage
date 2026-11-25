@@ -79,7 +79,14 @@ def test_health_system_and_settings_come_from_strata_python(tmp_path: Path, live
         assert health["ok"] is True
         system = json.loads(get(base, "/_home/api/system")[2])
         assert {f["name"] for f in system["folders"]} == {"sites", "state", "repos"}
-        assert set(json.loads(get(base, "/_home/api/settings")[2])) == {"sites", "state", "repos", "perf"}
+        assert set(json.loads(get(base, "/_home/api/settings")[2])) == {
+            "sites",
+            "state",
+            "repos",
+            "jobs",
+            "disks",
+            "perf",
+        }
 
 
 def test_perf_window_param_and_missing_data(tmp_path: Path, live_app: LiveApp):

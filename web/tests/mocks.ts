@@ -3,7 +3,7 @@ import type { Perf, Status } from "@/src/types";
 
 export const status: Status = {
   generated: "2026-11-07T12:00:00+00:00",
-  hostname: "omarchy",
+  hostname: "myhost",
   finding: null,
   apps: [
     { name: "Notes", path: "/notes/", desc: "Markdown notes", unit: "notes.service", state: "active", version: "behind", running_rev: "a1b2c3d", head_rev: "e4f5a6b" },
@@ -33,19 +33,19 @@ export const perf = (window: "1h" | "24h" | "7d" = "1h"): Perf => {
   return {
     available: true, window, label: { "1h": "last hour", "24h": "last 24 hours", "7d": "last week" }[window],
     samples: 360, covered_s: Math.min(seconds, 3600), start: "2026-11-25T11:00:00", end: "2026-11-25T12:00:00", mem_total_gb: 32,
-    verdict: "Programs waiting for memory was the tightest in the last hour: over its limit 12% of the time, mostly strata-models.",
+    verdict: "Programs waiting for memory was the tightest in the last hour: over its limit 12% of the time, mostly render-worker.",
     resources: [
       { key: "cpu", label: "CPU busy, all threads", unit: "%", mean: 20, p95: 60, max: 90, threshold: 80, stressed_pct: 0.4 },
       { key: "mem_wait", label: "Programs waiting for memory", unit: "%", mean: 5, p95: 30, max: 45, threshold: 10, stressed_pct: 12 },
-      { key: "disk_sda", label: "Disk sda busy", unit: "%", mean: 1, p95: 8, max: 50, threshold: 80, stressed_pct: 4 },
+      { key: "disk_sdb", label: "Disk sdb busy", unit: "%", mean: 1, p95: 8, max: 50, threshold: 80, stressed_pct: 4 },
       { key: "mem", label: "Memory in use", unit: "GB", mean: 18.2, p95: 25, max: 28.4, threshold: 28.8, stressed_pct: 0 },
-      { key: "net_rx", label: "Network in (eno1)", unit: "MB/s", mean: 0.3, p95: 1.7, max: 2.4, threshold: 90, stressed_pct: 0 },
+      { key: "net_rx", label: "Network in (eth0)", unit: "MB/s", mean: 0.3, p95: 1.7, max: 2.4, threshold: 90, stressed_pct: 0 },
     ],
     services: [
-      { name: "strata-models", label: "", cpu_hours: 3.2, ram_gb: 18.1, swap_gb: 4.3, written_gb: 0.4, read_gb: 0, gpu_mib: 9930 },
-      { name: "claude-remote-control", label: "docs:python", cpu_hours: 0.5, ram_gb: 2.4, swap_gb: 0, written_gb: 1.2, read_gb: 1.5, gpu_mib: 0 },
+      { name: "render-worker", label: "", cpu_hours: 3.2, ram_gb: 18.1, swap_gb: 4.3, written_gb: 0.4, read_gb: 0, gpu_mib: 9930 },
+      { name: "nightly-import", label: "photos", cpu_hours: 0.5, ram_gb: 2.4, swap_gb: 0, written_gb: 1.2, read_gb: 1.5, gpu_mib: 0 },
     ],
-    pressure: [{ resource: "memory", minutes: 7, who: [{ name: "strata-models", label: "", share: 80 }, { name: "claude-remote-control", label: "docs:python", share: 20 }] }],
+    pressure: [{ resource: "memory", minutes: 7, who: [{ name: "render-worker", label: "", share: 80 }, { name: "nightly-import", label: "photos", share: 20 }] }],
     series: { cpu: line(seconds, (i) => 10 + i), mem: line(seconds, (i) => 16 + i / 4), disk: line(seconds, () => 3), gpu: line(seconds, () => 0) },
   };
 };
