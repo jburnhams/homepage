@@ -1,24 +1,15 @@
-// Every number and time on screen goes through here, once. Units are joined with a non-breaking
-// space so "4.2 GB" never wraps between figure and unit.
-const NBSP = " ";
-const locale = "en-GB";
+// Numbers and dates go through strata-react's `format` (Intl, non-breaking units, an en dash for a
+// value that is not known). Only what is specific to this page stays here: systemd's time stamps,
+// uptime and the chart's "seconds ago" ticks.
+import { createFormat, NBSP } from "strata-react";
 
-const one = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 });
-const zero = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-export const percent = (v: number) => `${zero.format(v)}${NBSP}%`;
-export const clock = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+export const format = createFormat("en-GB");
 
-export function bytes(n: number): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${i < 2 ? zero.format(n) : one.format(n)}${NBSP}${units[i]}`;
-}
+/** The server's percentages run 0-100 (CPU can pass 100 on several cores); `format.percent` takes a ratio. */
+export const percent = (v: number) => format.percent(v / 100);
 
-export const kb = (v: number) => bytes(v * 1024);
+/** /proc reports kibibytes; `format.bytes` takes bytes. */
+export const kb = (v: number) => format.bytes(v * 1024);
 
 export function uptime(s: number): string {
   const d = Math.floor(s / 86400);
@@ -30,13 +21,13 @@ export function uptime(s: number): string {
 /** systemd's "Sat 2026-11-07 04:25:28 GMT" -> "07 Nov 04:25"; empty -> a dash. */
 export function systemdTime(ts: string): string {
   const [, date, time] = ts.split(" ");
-  if (!date || !date.includes("-") || !time) return ts || "–";
+  if (!date || !date.includes("-") || !time) return ts || format.missing;
   const [, mo, da] = date.split("-");
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${da} ${months[Number(mo) - 1] ?? mo} ${time.slice(0, 5)}`;
 }
 
-/** Seconds ago as a tick label: "now", "−30 s", "−2 min". */
+/** Seconds ago as a chart tick label: "now", "−30 s", "−2 min". */
 export function ago(seconds: number): string {
   if (seconds <= 0) return "now";
   return seconds < 90 ? `−${Math.round(seconds)}${NBSP}s` : `−${Math.round(seconds / 60)}${NBSP}min`;

@@ -14,9 +14,9 @@ describe("the home server page", () => {
     for (const name of ["Resources", "Top processes", "Apps", "Jobs", "Storage"]) {
       expect(screen.getByRole("heading", { name })).toBeInTheDocument();
     }
-    expect(screen.getByRole("table", { name: "Top processes by CPU" })).toHaveTextContent("firefox");
-    expect(screen.getByRole("table", { name: "Top processes by memory" })).toHaveTextContent("postgres");
-    expect(screen.getByRole("table", { name: "Scheduled jobs" })).toHaveTextContent("OK");
+    expect(screen.getByRole("grid", { name: "Top processes by CPU" })).toHaveTextContent("firefox");
+    expect(screen.getByRole("grid", { name: "Top processes by memory" })).toHaveTextContent("postgres");
+    expect(screen.getByRole("grid", { name: "Scheduled jobs" })).toHaveTextContent("OK");
   });
 
   it("shows the server's finding when there is one", async () => {
@@ -27,11 +27,11 @@ describe("the home server page", () => {
 
   it("gives each app a link with a word for its state and version", async () => {
     renderWithStrata(<App />);
-    const notes = await screen.findByRole("link", { name: /Notes/ });
+    const notes = await screen.findByRole("link", { name: "Notes" });
     expect(notes).toHaveAttribute("href", "/notes/");
-    expect(notes).toHaveTextContent("Running");
-    expect(notes).toHaveTextContent("Code newer: a1b2c3d → e4f5a6b");
-    expect(screen.getByRole("link", { name: /Files/ })).toHaveTextContent("failed");
+    expect(notes).toHaveAccessibleDescription(/Running/);
+    expect(notes).toHaveAccessibleDescription(/Code newer: a1b2c3d → e4f5a6b/);
+    expect(screen.getByRole("link", { name: "Files" })).toHaveAccessibleDescription(/failed/);
   });
 
   it("teaches the next step when there are no apps", async () => {
@@ -56,8 +56,31 @@ describe("the home server page", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
     fail = true;
     await client.refetchQueries({ queryKey: ["status"] });
-    expect(await screen.findByText(/Showing the last readings/)).toBeInTheDocument();
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(/Could not load the status/);
+    expect(notice).toHaveTextContent(/Showing the last readings, from/);
     expect(screen.getByRole("heading", { level: 1, name: "omarchy" })).toBeInTheDocument();
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+  });
+
+  it("draws each disk as a meter in words, and names a disk that is filling up", async () => {
+    server.use(
+      http.get(statusUrl, () =>
+        HttpResponse.json({ ...status, disks: [{ label: "Root", path: "/", total: 100e9, used: 93e9, pct: 93 }] }),
+      ),
+    );
+    renderWithStrata(<App />);
+    const root = await screen.findByRole("meter", { name: "Root" });
+    expect(root).toHaveAttribute("aria-valuetext", expect.stringMatching(/93\s?% used/));
+    expect(screen.getByText("Nearly full")).toBeInTheDocument();
+  });
+
+  it("breaks the memory down by use, with swap as its own meter", async () => {
+    renderWithStrata(<App />);
+    const memory = await screen.findByRole("table", { name: "Memory by use" });
+    for (const part of ["Used by programs", "Cached", "Buffers", "Free"]) expect(memory).toHaveTextContent(part);
   });
 
   it("pauses and resumes updates", async () => {

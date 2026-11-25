@@ -5,6 +5,10 @@ import { defineVisualConfig } from "strata-react/visual";
 import { failedUnits, handlers, noApps, statusError, statusLoading } from "./tests/mocks";
 
 export default defineVisualConfig({
+  // The page deliberately draws in the system UI font (DESIGN.md: it is served from a home server and
+  // should not wait on a font download), which strata-visual's default refuses because it differs by
+  // machine. Baselines are therefore only comparable on the machine that recorded them (CI's).
+  systemFonts: "allow",
   app: {
     dir: "dist",
     base: "/_home/",
