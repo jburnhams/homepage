@@ -106,3 +106,15 @@ def test_a_bad_cookie_name_falls_back_instead_of_breaking_the_header(tmp_path: P
 def test_a_wrong_password_is_refused(tmp_path: Path, port: int):
     for _ in serve(write_conf(tmp_path), port):
         assert request(port, "POST", "/auth/login", "password=nope&next=%2F")[0] == 401
+
+
+def test_a_burst_of_checks_is_queued_not_dropped(tmp_path: Path, port: int):
+    """A page of image crops makes Caddy ask /auth/check dozens of times at once: the listen queue must hold them all
+    (the default of 5 dropped the rest, and Caddy answered 502 after its 3 s dial timeout)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    assert load_script().Server.request_queue_size >= 128
+    for _ in serve(write_conf(tmp_path), port):
+        with ThreadPoolExecutor(64) as pool:
+            codes = list(pool.map(lambda _: request(port, "GET", "/auth/check")[0], range(64)))
+        assert codes == [303] * 64

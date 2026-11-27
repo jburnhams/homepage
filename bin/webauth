@@ -156,11 +156,18 @@ def cmd_sign_out(a):
     d = load(); d['secret'] = secrets.token_hex(32); save(d); print('every cookie is now invalid')
 
 
+class Server(ThreadingHTTPServer):
+    # Caddy asks /auth/check before every request, so a page that loads dozens of images at once opens dozens of connections together.
+    # The default listen backlog of 5 dropped the rest, and Caddy gave up after its 3 s dial timeout: those images failed with a 502.
+    request_queue_size = 128
+    daemon_threads = True
+
+
 def cmd_serve(a):
     d = load()
     if not d.get('secret'): d['secret'] = secrets.token_hex(32); save(d)
     print(f'webauth on 127.0.0.1:{a.port}; password {"set" if d.get("password_hash") else "NOT SET (run webauth set-password)"}', flush=True)
-    ThreadingHTTPServer(('127.0.0.1', a.port), H).serve_forever()
+    Server(('127.0.0.1', a.port), H).serve_forever()
 
 
 if __name__ == '__main__':
