@@ -2,7 +2,7 @@ export type App = {
   name: string; path: string; desc: string; unit: string; state: string;
   version: "" | "current" | "behind" | "unknown"; running_rev?: string; head_rev?: string;
 };
-export type Job = { label: string; unit: string; result: string; active: string; last: string; next: string };
+export type Job = { label: string; unit: string; result: string; active: string; last: string; next: string; last_at: string | null; next_at: string | null };
 export type Disk = { label: string; path: string; total: number; used: number; pct: number };
 export type Proc = { pid: number; name: string; cpu: number; rss: number };
 export type Resources = {

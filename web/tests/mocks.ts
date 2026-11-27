@@ -9,7 +9,7 @@ export const status: Status = {
     { name: "Notes", path: "/notes/", desc: "Markdown notes", unit: "notes.service", state: "active", version: "behind", running_rev: "a1b2c3d", head_rev: "e4f5a6b" },
     { name: "Files", path: "/files/", desc: "File share", unit: "files.service", state: "failed", version: "" },
   ],
-  jobs: [{ label: "Backup", unit: "backup.service", result: "success", active: "inactive", last: "Sat 2026-11-07 04:25:28 GMT", next: "Sun 2026-11-08 04:25:00 GMT" }],
+  jobs: [{ label: "Backup", unit: "backup.service", result: "success", active: "inactive", last: "Sat 2026-11-07 04:25:28 GMT", next: "Sun 2026-11-08 04:25:00 GMT", last_at: "2026-11-07T04:25:28+00:00", next_at: "2026-11-08T04:25:00+00:00" }],
   failed: [],
   disks: [{ label: "Root", path: "/", total: 1e11, used: 5e10, pct: 50 }],
   system: { uptime_s: 90_000, load: [0.5, 0.4, 0.3] },
@@ -24,6 +24,17 @@ export const status: Status = {
 
 export const statusUrl = "/_home/api/status";
 export const perfUrl = "/_home/api/perf";
+export const systemUrl = "/_home/api/system";
+
+/** What strata-python's `add_system` answers: the version, where it runs, the folders it reads and their disks. */
+export const system = {
+  version: "0.1.0", commit: "a1b2c3d4e5f6a7b8c9d0", python: "3.12.3", platform: "Linux-6.8-x86_64", started_at: "2026-11-06T12:00:00+00:00",
+  folders: [
+    { name: "sites", path: "/home/ada/.config/caddy/sites", exists: true, free_bytes: 6e10, total_bytes: 1e11 },
+    { name: "repos", path: "/home/ada/code", exists: false, free_bytes: null, total_bytes: null },
+  ],
+  services: [],
+};
 
 const line = (seconds: number, f: (i: number) => number) =>
   Array.from({ length: 24 }, (_, i) => ({ x: -Math.round(seconds * (1 - i / 23)), y: f(i) }));
@@ -60,6 +71,7 @@ export const perf = (window: "1h" | "24h" | "7d" = "1h"): Perf => {
 /** The healthy server: the handlers the unit tests and the visual shots both start from. */
 export const handlers = [
   http.get(statusUrl, () => HttpResponse.json(status)),
+  http.get(systemUrl, () => HttpResponse.json(system)),
   http.get(perfUrl, ({ request }) => HttpResponse.json(perf((new URL(request.url).searchParams.get("window") ?? "1h") as "1h" | "24h" | "7d"))),
 ];
 
