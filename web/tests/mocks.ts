@@ -45,7 +45,14 @@ export const perf = (window: "1h" | "24h" | "7d" = "1h"): Perf => {
       { name: "strata-models", label: "", cpu_hours: 3.2, ram_gb: 18.1, swap_gb: 4.3, written_gb: 0.4, read_gb: 0, gpu_mib: 9930 },
       { name: "claude-remote-control", label: "docs:python", cpu_hours: 0.5, ram_gb: 2.4, swap_gb: 0, written_gb: 1.2, read_gb: 1.5, gpu_mib: 0 },
     ],
-    pressure: [{ resource: "memory", minutes: 7, who: [{ name: "strata-models", label: "", share: 80 }, { name: "claude-remote-control", label: "docs:python", share: 20 }] }],
+    pressure: [
+      { resource: "memory", minutes: 7, disks: [], who: [{ name: "strata-models", label: "", dir: "", share: 80 }, { name: "claude-remote-control", label: "docs:python", dir: "", share: 20 }] },
+      { resource: "disk", minutes: 12, disks: [{ disk: "sdb", share: 85, spinning: true }], who: [{ name: "smb", label: "", dir: "(whole service)", share: 60 }, { name: "tubes", label: "", dir: "/srv/mirror/raw", share: 40 }] },
+    ],
+    disk_paths: [
+      { disk: "sdb", name: "filecat", label: "", dir: "/srv/mirror/raw", read_gb: 120.4, write_gb: 0, active_min: 540, hours: 9, steady: true },
+      { disk: "sdb", name: "rsync", label: "", dir: "/srv/mirror/personal", read_gb: 80, write_gb: 2.1, active_min: 25, hours: 1, steady: false },
+    ],
     series: { cpu: line(seconds, (i) => 10 + i), mem: line(seconds, (i) => 16 + i / 4), disk: line(seconds, () => 3), gpu: line(seconds, () => 0) },
   };
 };

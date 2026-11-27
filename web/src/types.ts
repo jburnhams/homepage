@@ -21,12 +21,18 @@ export type Status = {
 export type PerfWindow = "1h" | "24h" | "7d";
 export type PerfResource = { key: string; label: string; unit: "%" | "GB" | "MB/s"; mean: number; p95: number; max: number; threshold: number | null; stressed_pct: number | null };
 export type PerfService = { name: string; label: string; cpu_hours: number; ram_gb: number; swap_gb: number; written_gb: number; read_gb: number; gpu_mib: number };
-export type PerfPressure = { resource: "memory" | "disk" | "cpu"; minutes: number; who: { name: string; label: string; share: number }[] };
+export type PerfPressure = {
+  resource: "memory" | "disk" | "cpu"; minutes: number;
+  who: { name: string; label: string; dir: string; share: number }[];
+  /** Disks over 50 % busy while programs waited (disk waits only). */
+  disks: { disk: string; share: number; spinning: boolean | null }[];
+};
+export type PerfDiskPath = { disk: string; name: string; label: string; dir: string; read_gb: number; write_gb: number; active_min: number; hours: number; steady: boolean };
 export type PerfPoint = { x: number; y: number };
 export type Perf =
   | { available: false; window: PerfWindow; label: string }
   | {
       available: true; window: PerfWindow; label: string; samples: number; covered_s: number; start: string; end: string;
-      mem_total_gb: number; verdict: string; resources: PerfResource[]; services: PerfService[]; pressure: PerfPressure[];
+      mem_total_gb: number; verdict: string; resources: PerfResource[]; services: PerfService[]; pressure: PerfPressure[]; disk_paths: PerfDiskPath[];
       series: { cpu: PerfPoint[]; mem: PerfPoint[]; disk: PerfPoint[]; gpu: PerfPoint[] };
     };

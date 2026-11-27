@@ -211,8 +211,14 @@ def perf_section(perf):
         f"<tr><td>{e(s['name'])}{(' <span class=d>' + e(s['label']) + '</span>') if s['label'] else ''}</td><td>{s['cpu_hours']:.2f}</td>"
         f"<td>{s['ram_gb']:.1f} GB</td><td>{s['written_gb']:.1f} GB</td><td>{s['gpu_mib']} MiB</td></tr>"
         for s in perf["services"])
+    dsk = "".join(
+        f"<tr><td>{e(x['disk'])}</td><td>{e(x['name'])}{(' <span class=d>' + e(x['label']) + '</span>') if x['label'] else ''}</td>"
+        f"<td>{e(x['dir'])}</td><td>{x['read_gb'] + x['write_gb']:.1f} GB</td><td>{x['active_min']} min</td>"
+        f"<td>{'steady: move to the SSD?' if x['steady'] else 'bursts'}</td></tr>"
+        for x in perf.get("disk_paths", []))
     return (f"<h2>Over time: {e(perf['label'])}</h2><p class='sub'>{e(perf['verdict'])}</p>"
             "<table class='jobs'><tr><th>Resource</th><th>Average</th><th>Busy (p95)</th><th>Peak</th><th>Over limit</th></tr>" + rows + "</table>"
+            + ("<h2>Spinning disks</h2><p class='sub'>Steady use is what to move to the SSD; bursts of big files are what these disks are for.</p><table class='jobs'><tr><th>Disk</th><th>Service</th><th>Folder</th><th>Data</th><th>Active</th><th>Pattern</th></tr>" + dsk + "</table>" if dsk else "")
             + ("<h2>Who used it</h2><table class='jobs'><tr><th>Service</th><th>CPU core-hours</th><th>Peak RAM</th><th>Written</th><th>GPU memory</th></tr>" + svc + "</table>" if svc else ""))
 
 

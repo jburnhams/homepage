@@ -2,6 +2,7 @@
 
 `<dir>/YYYY-MM-DD.csv` has one row every 10 s of CPU, memory, pressure (PSI), disks, network and GPU.
 `<dir>/units-YYYY-MM-DD.csv` has one row per service or job that was doing something in each sample.
+`<dir>/diskpaths-YYYY-MM-DD.csv` has the data each service or job moved on each physical disk, with the folder (or `(whole service)`).
 Both are plain CSV with a header, read here with the standard library only. Nothing is written.
 """
 import csv
@@ -29,7 +30,7 @@ CORE = [
 ]
 PRESSURE = [   # (resource word, PSI column, threshold, units column that says who)
     ("memory", "psi_mem_some", 10, ("mem_gb",)),
-    ("disk", "psi_io_some", 10, ("io_w_mbs", "io_r_mbs")),
+    ("disk", "psi_io_some", 10, ()),     # who comes from diskpaths, on the disks that were busy: bytes summed over all disks blamed fast-disk users
     ("cpu", "psi_cpu", 10, ("cpu_pct",)),
 ]
 
@@ -153,14 +154,55 @@ def summary(directory, window="24h", now=None, mem_total_gb=0.0):
             a["r"] += (_num(r.get("io_r_mbs")) or 0) * SAMPLE_S / 1000
             a["gpu"] = max(a["gpu"], _num(r.get("gpu_mem_mib")) or 0)
             for word, _, _, keys in PRESSURE:
-                if ts in hit_sets[word]:
+                if keys and ts in hit_sets[word]:
                     ctr[word][nm] += sum(_num(r.get(k)) or 0 for k in keys)
+
+    # which disk and folder: data moved per service on each physical disk
+    dp_rows = [dict(zip(head, row)) for head, row in _read(directory, "diskpaths-", lo, now)]
+    spinning = {r["disk"]: r.get("rot") == "1" for r in dp_rows}
+    idx = {s_: i for i, s_ in enumerate(stamps)}
     for word, _, _, _ in PRESSURE:
         if not hit_sets[word]:
             continue
-        tot = sum(ctr[word].values())
-        who = [dict(name=k[0], label=k[1], share=round(100 * v / tot)) for k, v in ctr[word].most_common(4)] if tot else []
-        pressure.append(dict(resource=word, minutes=max(1, round(len(hit_sets[word]) * SAMPLE_S / 60)), who=who))
+        minutes = max(1, round(len(hit_sets[word]) * SAMPLE_S / 60))
+        if word != "disk":
+            tot = sum(ctr[word].values())
+            who = [dict(name=k[0], label=k[1], dir="", share=round(100 * v / tot)) for k, v in ctr[word].most_common(4)] if tot else []
+            pressure.append(dict(resource=word, minutes=minutes, who=who, disks=[]))
+            continue
+        hit = hit_sets["disk"]
+        busy = []                          # the disks that were over 50% busy while programs waited
+        for d in disks:
+            k = sum(1 for s_ in hit if (cols[d + "_util"][idx[s_]] or 0) > 50)
+            if k:
+                busy.append(dict(disk=d, share=round(100 * k / len(hit)), spinning=spinning.get(d)))
+        busy.sort(key=lambda b: -b["share"])
+        main = {b["disk"] for b in busy if b["share"] >= 20}
+        c = Counter()
+        for r in dp_rows:
+            if r["ts"] in hit and r["disk"] in main:
+                c[(_name(r["unit"], r["label"]), r["dir"])] += (_num(r.get("read_mbs")) or 0) + (_num(r.get("write_mbs")) or 0)
+        tot = sum(c.values())
+        who = [dict(name=k[0][0], label=k[0][1], dir=k[1], share=round(100 * v / tot)) for k, v in c.most_common(4)] if tot else []
+        pressure.append(dict(resource="disk", minutes=minutes, who=who, disks=busy))
+
+    # what uses the spinning disks, and whether steadily (a candidate for the NVMe) or in bursts (what they are for)
+    agg = defaultdict(lambda: dict(r=0.0, w=0.0, ts=set(), hrs=set()))
+    for r in dp_rows:
+        if r.get("rot") != "1":
+            continue
+        a = agg[(r["disk"], _name(r["unit"], r["label"]), r["dir"])]
+        a["r"] += (_num(r.get("read_mbs")) or 0) * SAMPLE_S / 1000
+        a["w"] += (_num(r.get("write_mbs")) or 0) * SAMPLE_S / 1000
+        a["ts"].add(r["ts"])
+        a["hrs"].add(r["ts"][:13])
+    all_hours = len({s_[:13] for s_ in stamps})
+    disk_paths = [dict(disk=k[0], name=k[1][0], label=k[1][1], dir=k[2], read_gb=round(a["r"], 1), write_gb=round(a["w"], 1),
+                       active_min=round(len(a["ts"]) * SAMPLE_S / 60), hours=len(a["hrs"]),
+                       steady=len(a["hrs"]) >= max(3, 0.25 * all_hours))
+                  for k, a in agg.items() if a["r"] + a["w"] >= 0.5]
+    disk_paths.sort(key=lambda d: (not d["steady"], -(d["read_gb"] + d["write_gb"])))
+    disk_paths = disk_paths[:12]
 
     chosen = []
     for key, k in (("cpu", 8), ("ram", 6), ("w", 5), ("gpu", 3)):
@@ -197,7 +239,7 @@ def summary(directory, window="24h", now=None, mem_total_gb=0.0):
 
     return dict(available=True, window=window, label=LABELS[window], samples=n, covered_s=min(covered, span),
                 start=stamps[0], end=stamps[-1], mem_total_gb=round(mem_total_gb, 1), resources=res, services=services,
-                pressure=pressure, series=series, verdict=verdict(window, res, pressure, covered, span))
+                pressure=pressure, disk_paths=disk_paths, series=series, verdict=verdict(window, res, pressure, covered, span))
 
 
 def verdict(window, res, pressure, covered, span):
@@ -215,6 +257,8 @@ def verdict(window, res, pressure, covered, span):
         if p["resource"] == word and p["who"]:
             w = p["who"][0]
             who = ", mostly %s" % (w["name"] + (" [%s]" % w["label"] if w["label"] else ""))
+            if word == "disk" and p.get("disks"):
+                who += " (%s was busy)" % p["disks"][0]["disk"]
     return "%s was the tightest in the %s: over its limit %s%% of the time%s.%s" % (top["label"], label, round(top["stressed_pct"]), who, note)
 
 
