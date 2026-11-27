@@ -56,7 +56,14 @@ export const perf = (window: "1h" | "24h" | "7d" = "1h"): Perf => {
       { name: "render-worker", label: "", cpu_hours: 3.2, ram_gb: 18.1, swap_gb: 4.3, written_gb: 0.4, read_gb: 0, gpu_mib: 9930 },
       { name: "nightly-import", label: "photos", cpu_hours: 0.5, ram_gb: 2.4, swap_gb: 0, written_gb: 1.2, read_gb: 1.5, gpu_mib: 0 },
     ],
-    pressure: [{ resource: "memory", minutes: 7, who: [{ name: "render-worker", label: "", share: 80 }, { name: "nightly-import", label: "photos", share: 20 }] }],
+    pressure: [
+      { resource: "memory", minutes: 7, disks: [], who: [{ name: "render-worker", label: "", dir: "", share: 80 }, { name: "nightly-import", label: "photos", dir: "", share: 20 }] },
+      { resource: "disk", minutes: 12, disks: [{ disk: "sdb", share: 85, spinning: true }], who: [{ name: "file-share", label: "", dir: "(whole service)", share: 60 }, { name: "media-sync", label: "", dir: "/data/archive/raw", share: 40 }] },
+    ],
+    disk_paths: [
+      { disk: "sdb", name: "indexer", label: "", dir: "/data/archive/raw", read_gb: 120.4, write_gb: 0, active_min: 540, hours: 9, steady: true },
+      { disk: "sdb", name: "copy-job", label: "", dir: "/data/archive/2015", read_gb: 80, write_gb: 2.1, active_min: 25, hours: 1, steady: false },
+    ],
     series: { cpu: line(seconds, (i) => 10 + i), mem: line(seconds, (i) => 16 + i / 4), disk: line(seconds, () => 3), gpu: line(seconds, () => 0) },
   };
 };
