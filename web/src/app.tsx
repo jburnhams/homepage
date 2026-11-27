@@ -1,12 +1,12 @@
 import * as React from "react";
-import { Pause, Play } from "lucide-react";
-import { Button, ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, Skeleton, StaleNotice, Status, TableSkeleton, type Column } from "strata-react";
+import { ColorSchemeChoice, DataTable, DataView, EmptyState, LineChart, Meter, Metric, MetricStrip, PageHeader, PauseButton, ScheduleTable, Skeleton, StaleNotice, SystemPanel, TableSkeleton, usePoll, type Column, type Poll, type ScheduleRow } from "strata-react";
 import { Apps } from "@/components/apps";
 import { Memory } from "@/components/memory";
 import { OverTime } from "@/components/over-time";
-import { ago, format, kb, percent, systemdTime, uptime } from "@/lib/format";
+import { format, kb, percent } from "@/lib/format";
 import type { Disk, Job, Proc, Resources, Status as Data } from "./types";
 import { useStatus } from "./use-status";
+import { useSystem } from "./use-system";
 
 const POLL_MS = 5000;
 
@@ -16,23 +16,21 @@ const procColumns: Column<Proc>[] = [
   { key: "rss", header: "Memory", numeric: true, cell: (p) => format.bytes(p.rss), sort: (a, b) => a.rss - b.rss },
 ];
 
-const jobColumns: Column<Job>[] = [
-  { key: "label", header: "Job", cell: (j) => j.label },
-  {
-    key: "result",
-    header: "Last result",
-    cell: (j) =>
-      j.active === "activating" || j.active === "active" ? (
-        <Status tone="info">Running</Status>
-      ) : j.result === "success" ? (
-        <Status tone="success">OK</Status>
-      ) : (
-        <Status tone="danger">{j.result || "Never run"}</Status>
-      ),
-  },
-  { key: "last", header: "Last run", cell: (j) => systemdTime(j.last), className: "max-sm:hidden" },
-  { key: "next", header: "Next", cell: (j) => systemdTime(j.next) },
-];
+// The scheduled jobs are strata-react's ScheduleTable: the last result as a word, when it last ran and
+// when it runs next (the last two drop on a phone). The server sends both moments as ISO 8601 (`last_at`,
+// `next_at`); a job that has not run says "Never run".
+// systemd's `Result` is "success" or one of several failures ("exit-code", "signal", "timeout", ...); ScheduleTable
+// knows "success" and "failed", so every failure is "failed" and an empty result is a job that has not run.
+const scheduleResult = (result: string): string | null => (result === "" ? null : result === "success" ? "success" : "failed");
+
+const scheduleRows = (jobs: Job[]): ScheduleRow[] =>
+  jobs.map((j) => ({
+    label: j.label,
+    result: scheduleResult(j.result),
+    running: j.active === "activating" || j.active === "active",
+    last: j.last_at,
+    next: j.next_at,
+  }));
 
 // Disks are levels, not rows of a table: a Meter per disk, with the same two limits for all of them
 // (shares of the disk's size) so a full disk names its state in words as well as colour.
@@ -87,10 +85,10 @@ function Charts({ r }: { r: Resources }) {
         <h3 className="type-label">CPU</h3>
         {cpu.series.length < 2 ? collecting : (
           <LineChart
-            label={`CPU use over the last ${ago(-cpu.series[0].x)}`}
+            label={`CPU use over the last ${format.duration(-cpu.series[0].x)}`}
             series={cpu.series}
             seriesLabel="CPU, all cores"
-            formatX={(x) => ago(-x)}
+            formatX={(x) => format.agoTick(-x)}
             formatY={percent}
             xTicks={cpu.ticks}
             height={200}
@@ -102,10 +100,10 @@ function Charts({ r }: { r: Resources }) {
           <h3 className="type-label">Memory used by programs</h3>
           {mem.series.length < 2 ? collecting : (
             <LineChart
-              label={`Memory used by programs over the last ${ago(-mem.series[0].x)}`}
+              label={`Memory used by programs over the last ${format.duration(-mem.series[0].x)}`}
               series={mem.series}
               seriesLabel="Used, without cache"
-              formatX={(x) => ago(-x)}
+              formatX={(x) => format.agoTick(-x)}
               formatY={percent}
               xTicks={mem.ticks}
               height={200}
@@ -119,25 +117,21 @@ function Charts({ r }: { r: Resources }) {
   );
 }
 
-function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause: () => void }) {
+function Page({ data, poll }: { data: Data; poll: Poll }) {
   const r = data.resources;
   const load = data.system.load;
   const cpu = r?.cpu.at(-1);
+  const system = useSystem(poll);
   const memPct = r?.mem.at(-1);
   return (
     <div className="grid gap-8">
       <PageHeader
         title={data.hostname}
-        scope={[data.system.uptime_s !== undefined && `Up ${uptime(data.system.uptime_s)}`, `updated ${format.clock(new Date(data.generated))}`]
-          .filter(Boolean)
-          .join(" · ")}
+        scope={data.system.uptime_s !== undefined ? `Up ${format.duration(data.system.uptime_s, { style: "parts" })}` : undefined}
         actions={
           <>
             <ColorSchemeChoice compact />
-            <Button size="sm" onClick={onPause} aria-pressed={paused}>
-              {paused ? <Play aria-hidden /> : <Pause aria-hidden />}
-              {paused ? "Resume updates" : "Pause updates"}
-            </Button>
+            <PauseButton poll={poll} />
           </>
         }
         finding={{ text: data.finding ?? "All good: every app is up, nothing has failed, disks have room." }}
@@ -159,7 +153,7 @@ function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause:
       )}
 
       <Section title="Over time">
-        <OverTime paused={paused} />
+        <OverTime poll={poll} />
       </Section>
 
       {r && r.top_cpu.length > 0 && (
@@ -181,7 +175,7 @@ function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause:
 
       {data.jobs.length > 0 && (
         <Section title="Jobs">
-          <DataTable caption="Scheduled jobs" columns={jobColumns} rows={data.jobs} rowKey={(j) => j.unit} />
+          <ScheduleTable caption="Scheduled jobs" rows={scheduleRows(data.jobs)} />
         </Section>
       )}
       {data.disks.length > 0 && (
@@ -189,6 +183,10 @@ function Page({ data, paused, onPause }: { data: Data; paused: boolean; onPause:
           <Disks disks={data.disks} />
         </Section>
       )}
+
+      <Section title="About this server">
+        <SystemPanel load={system} />
+      </Section>
 
       <footer className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-4 type-body-sm text-muted-foreground">
         <a href="/_home/api/status" className="underline">JSON</a>
@@ -210,8 +208,8 @@ function PageSkeleton() {
 }
 
 export function App() {
-  const [paused, setPaused] = React.useState(false);
-  const state = useStatus(POLL_MS, paused);
+  const poll = usePoll({ every: POLL_MS });
+  const state = useStatus(poll);
   React.useEffect(() => {
     if (state.status === "ready") document.title = state.data.hostname;
   }, [state]);
@@ -224,7 +222,7 @@ export function App() {
         empty={null}
         staleNotice={(stale) => <StaleNotice stale={stale} shown={(when) => `Showing the last readings, from ${when}.`} />}
       >
-        {(data) => <Page data={data} paused={paused} onPause={() => setPaused((p) => !p)} />}
+        {(data) => <Page data={data} poll={poll} />}
       </DataView>
     </main>
   );

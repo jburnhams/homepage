@@ -25,7 +25,8 @@ def run(cmd: list[str], timeout: float = 5) -> tuple[str, int]:
 
 
 def _show(unit: str, props: list[str], runner: Runner) -> dict[str, str]:
-    out, _ = runner(["systemctl", "--user", "show", unit, "-p", ",".join(props)])
+    # `--timestamp=utc`: the stamps then name UTC, which `_iso` can read; the default names the machine's zone by an abbreviation
+    out, _ = runner(["systemctl", "--user", "show", "--timestamp=utc", unit, "-p", ",".join(props)])
     d: dict[str, str] = {}
     for line in out.splitlines():
         k, _, v = line.partition("=")
@@ -57,6 +58,19 @@ def app_status(app: AppInfo, runner: Runner = run, state_dir: str | None = None,
     return a
 
 
+def _iso(stamp: str) -> str | None:
+    """systemd's `Sat 2026-11-07 04:25:28 UTC` as ISO 8601 (`2026-11-07T04:25:28+00:00`), for the front end's
+    `ScheduleTable`; an empty stamp ("n/a", a job that never ran) or another zone's abbreviation is None."""
+    parts = stamp.split()
+    if len(parts) != 4 or parts[3] not in ("UTC", "GMT"):
+        return None
+    try:
+        when = datetime.datetime.strptime(f"{parts[1]} {parts[2]}", "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return when.replace(tzinfo=datetime.UTC).isoformat()
+
+
 def job_status(jobs_to_show: list[tuple[str, str]], runner: Runner = run) -> list[Data]:
     """`(label, systemd user unit)` pairs from the `jobs` setting; only units that exist are shown."""
     jobs: list[Data] = []
@@ -69,14 +83,19 @@ def job_status(jobs_to_show: list[tuple[str, str]], runner: Runner = run) -> lis
         if d.get("LoadState") != "loaded":
             continue
         t = _show(unit + ".timer", ["NextElapseUSecRealtime"], runner)
+        last, next_ = d.get("ExecMainExitTimestamp", ""), t.get("NextElapseUSecRealtime", "")
         jobs.append(
             {
                 "label": label,
                 "unit": unit,
                 "result": d.get("Result", ""),
                 "active": d.get("ActiveState", ""),
-                "last": d.get("ExecMainExitTimestamp", ""),
-                "next": t.get("NextElapseUSecRealtime", ""),
+                "last": last,
+                "next": next_,
+                "last_at": _iso(
+                    last
+                ),  # the same moments as ISO 8601, for the page's table; the text is for the plain page
+                "next_at": _iso(next_),
             }
         )
     return jobs

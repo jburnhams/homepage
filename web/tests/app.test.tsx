@@ -56,13 +56,13 @@ describe("the home server page", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
     fail = true;
     await client.refetchQueries({ queryKey: ["status"] });
-    const notice = await screen.findByRole("status");
+    // the pause button's "Updated" line is a status too, so the notice is found by what it says
+    const notice = (await screen.findByText(/Showing the last readings, from/)).closest('[role="status"]')!;
     expect(notice).toHaveTextContent(/Could not load the status/);
-    expect(notice).toHaveTextContent(/Showing the last readings, from/);
     expect(screen.getByRole("heading", { level: 1, name: "myhost" })).toBeInTheDocument();
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/Showing the last readings/)).not.toBeInTheDocument());
   });
 
   it("draws each disk as a meter in words, and names a disk that is filling up", async () => {
@@ -83,12 +83,33 @@ describe("the home server page", () => {
     for (const part of ["Used by programs", "Cached", "Buffers", "Free"]) expect(memory).toHaveTextContent(part);
   });
 
-  it("pauses and resumes updates", async () => {
+  it("pauses and resumes updates, and says when it last read", async () => {
     renderWithStrata(<App />);
     const pause = await screen.findByRole("button", { name: "Pause updates" });
+    expect(pause).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByText(/^Updated \d/)).toBeInTheDocument();
     await userEvent.click(pause);
-    expect(screen.getByRole("button", { name: "Resume updates" })).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Resume updates" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Pause updates" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText(/^Paused\. Last updated \d/)).toBeInTheDocument();
+  });
+
+  it("calls every systemd failure result Failed, and a job that never ran Never run", async () => {
+    const job = status.jobs[0];
+    server.use(http.get(statusUrl, () => HttpResponse.json({ ...status, jobs: [{ ...job, label: "Sync", result: "exit-code" }, { ...job, label: "Fresh", result: "" }] })));
+    renderWithStrata(<App />);
+    const jobs = await screen.findByRole("grid", { name: "Scheduled jobs" });
+    expect(jobs).toHaveTextContent(/Sync.*Failed/);
+    expect(jobs).toHaveTextContent(/Fresh.*Never run/);
+  });
+
+  it("draws the scheduled jobs as words and the server's own report under About this server", async () => {
+    renderWithStrata(<App />);
+    const jobs = await screen.findByRole("grid", { name: "Scheduled jobs" });
+    expect(jobs).toHaveTextContent("Backup");
+    expect(jobs).toHaveTextContent("OK");
+    expect(await screen.findByRole("heading", { name: "About this server" })).toBeInTheDocument();
+    expect(await screen.findByText("a1b2c3d4e5f6")).toBeInTheDocument(); // the commit, short
+    expect(screen.getByText("Missing")).toBeInTheDocument();             // a folder that is not there is a word, not a blank
   });
 });
 
