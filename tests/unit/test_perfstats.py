@@ -15,9 +15,14 @@ def stamp(minutes_ago: int) -> str:
     return (NOW - datetime.timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
 
 
-def make(d: Path, rows: list[str], units: list[str]) -> None:
-    """The two daily files `perf-sample` writes, for today."""
+DISKP = "ts,unit,label,disk,rot,dir,read_mbs,write_mbs,src"
+
+
+def make(d: Path, rows: list[str], units: list[str], diskpaths: list[str] | None = None) -> None:
+    """The daily files `perf-sample` writes, for today."""
     day = NOW.strftime("%Y-%m-%d")
+    if diskpaths is not None:
+        (d / ("diskpaths-" + day + ".csv")).write_text(DISKP + "\n" + "\n".join(diskpaths) + "\n")
     (d / (day + ".csv")).write_text(MAIN + "\n" + "\n".join(rows) + "\n")
     (d / ("units-" + day + ".csv")).write_text(UNITS + "\n" + "\n".join(units) + "\n")
 
@@ -94,3 +99,43 @@ def test_plain_page_shows_it_escaped(tmp_path: Path):
     assert "<b>x</b>" not in html
     assert "&lt;b&gt;" in html
     assert "No performance data yet" in render.perf_section({"available": False, "label": "x"})
+
+
+def test_disk_waits_are_blamed_on_the_busy_disk_not_on_who_moved_most_bytes(tmp_path: Path):
+    # the database moves far more bytes, but on the SSD; the waits were on the spinning disk sdb
+    hit = [stamp(30), stamp(10)]
+    rows = [f"{stamp(50)},5,40,0,0,0,30,0,0,5,1,0,0,0,a,b"] + [f"{t},5,40,0,0,40,30,0,0,5,90,0,0,0,a,b" for t in hit]
+    dp = (
+        [f"{t},database.service,,nvme0n1,0,(whole service),0,200,cgroup" for t in hit]
+        + [f"{t},media-sync.service,,sdb,1,/data/archive/raw,80,0,files" for t in hit]
+        + [f"{t},file-share.service,,sdb,1,(whole service),0,50,cgroup" for t in hit]
+    )
+    make(tmp_path, rows, [], dp)
+    s = perfstats.summary(str(tmp_path), "1h", NOW, 32)
+    p = next(x for x in s["pressure"] if x["resource"] == "disk")
+    assert [x["disk"] for x in p["disks"]] == ["sdb"]  # only sdb was over 50 % busy
+    assert p["disks"][0]["share"] == 100
+    assert p["disks"][0]["spinning"] is True
+    assert [x["name"] for x in p["who"]] == ["media-sync", "file-share"]  # no postgresql
+    assert p["who"][0]["dir"] == "/data/archive/raw"
+    assert p["who"][0]["share"] == 62
+    assert "sdb was busy" in s["verdict"]
+    assert "database" not in s["verdict"]
+
+
+def test_spinning_disk_use_is_steady_or_bursts(tmp_path: Path):
+    hours = [10, 70, 130, 190]  # four different hours: steady
+    rows = calm((*hours, 250))
+    dp = (
+        [f"{stamp(m)},indexer.service,,sdb,1,/data/imports,100,0,files" for m in hours]
+        + [f"{stamp(250)},copy-job,,sdb,1,/data/archive/2015,500,0,files"]  # one big burst: GB but one hour
+        + [f"{stamp(10)},database.service,,nvme0n1,0,(whole service),0,300,cgroup"]
+    )
+    make(tmp_path, rows, [], dp)
+    paths = perfstats.summary(str(tmp_path), "24h", NOW, 32)["disk_paths"]
+    by = {(x["name"], x["dir"]): x for x in paths}
+    assert by[("indexer", "/data/imports")]["steady"]
+    assert by[("indexer", "/data/imports")]["hours"] == 4
+    assert not by[("copy-job", "/data/archive/2015")]["steady"]
+    assert "database" not in [x["name"] for x in paths]  # only spinning disks are listed
+    assert paths[0]["name"] == "indexer"  # steady users first: they are the ones to move

@@ -101,6 +101,16 @@ describe("the over-time section", () => {
     expect(table).toHaveTextContent("Often 12%");      // 12% of the time over its limit is named, not just coloured
     expect(table).toHaveTextContent("Fine");
     expect(screen.getByText(/Programs waited for memory for 7 min/)).toHaveTextContent("render-worker 80%");
+    expect(screen.getByText(/Programs waited for memory for 7 min/)).toHaveTextContent("Busiest then");
+    // a disk wait names the busy disk and who moved data on it, with the folder, never someone who only used a fast disk
+    const disk = screen.getByText(/Programs waited for disk for 12 min/);
+    expect(disk).toHaveTextContent("sdb (spinning) 85%");
+    expect(disk).toHaveTextContent("media-sync in /data/archive/raw 40%");
+    expect(disk).toHaveTextContent("file-share 60%");
+    expect(disk).toHaveTextContent("Most data moved on those disks");
+    const spin = screen.getByRole("grid", { name: "Spinning-disk use by service and folder" });
+    expect(spin).toHaveTextContent("Steady, move?"); // 9 hours of use on a spinning disk: a candidate for the SSD
+    expect(spin).toHaveTextContent("Bursts"); // one hour of big reads: what the disk is for
     expect(screen.getByRole("grid", { name: "Services and jobs by use" })).toHaveTextContent("nightly-import [photos]");
   });
 

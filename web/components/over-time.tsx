@@ -1,7 +1,7 @@
 import * as React from "react";
 import { DataTable, DataView, EmptyState, LineChart, Skeleton, Status, Tabs, type Column } from "strata-react";
 import { ago, duration, format, measure, percent } from "@/lib/format";
-import type { Perf, PerfPoint, PerfPressure, PerfResource, PerfService, PerfWindow } from "@/src/types";
+import type { Perf, PerfDiskPath, PerfPoint, PerfPressure, PerfResource, PerfService, PerfWindow } from "@/src/types";
 import { usePerf } from "@/src/use-perf";
 
 const WINDOWS: { value: PerfWindow; label: string; seconds: number }[] = [
@@ -58,15 +58,30 @@ const serviceColumns: Col<PerfService>[] = [
 
 const resourceWord = { memory: "memory", disk: "disk", cpu: "a CPU" } as const;
 
+/** "media-sync in /data/archive/raw 62%"; a whole-service row has no folder. */
+const who2 = (w: { name: string; label: string; dir: string; share: number }) =>
+  `${who(w)}${w.dir && w.dir !== "(whole service)" ? ` in ${w.dir}` : ""} ${w.share}%`;
+
 function Pressure({ p }: { p: PerfPressure }) {
-  const names = p.who.filter((w) => w.share > 0).map((w) => `${who(w)} ${w.share}%`);
+  const names = p.who.filter((w) => w.share > 0).map(who2);
+  const disks = p.disks.map((d) => `${d.disk}${d.spinning ? " (spinning)" : ""} ${percent(d.share)}`);
   return (
     <li>
       Programs waited for {resourceWord[p.resource]} for {duration(p.minutes * 60)}.
-      {names.length > 0 && ` Busiest then: ${names.join(", ")}.`}
+      {disks.length > 0 && ` Busy then: ${disks.join(", ")}.`}
+      {names.length > 0 && ` ${p.resource === "disk" ? "Most data moved on those disks" : "Busiest then"}: ${names.join(", ")}.`}
     </li>
   );
 }
+
+const pathColumns: Col<PerfDiskPath>[] = [
+  { key: "disk", header: "Disk", cell: (d) => d.disk },
+  { key: "name", header: "Service or job", cell: (d) => who(d), truncate: true, sort: (a, b) => who(a).localeCompare(who(b)) },
+  { key: "dir", header: "Folder", cell: (d) => (d.dir === "(whole service)" ? "whole service" : d.dir), truncate: true, phone: false },
+  { key: "data", header: "Data", numeric: true, cell: (d) => measure(d.read_gb + d.write_gb, "GB"), sort: (a, b) => a.read_gb + a.write_gb - (b.read_gb + b.write_gb) },
+  { key: "active", header: "Active", numeric: true, cell: (d) => duration(d.active_min * 60), sort: (a, b) => a.active_min - b.active_min, phone: false },
+  { key: "pattern", header: "Pattern", cell: (d) => (d.steady ? <Status tone="warning">Steady, move?</Status> : <Status tone="neutral">Bursts</Status>) },
+];
 
 function Chart({ title, points, seconds, unit, yMax, colour }: { title: string; points: PerfPoint[]; seconds: number; unit: "%" | "GB"; yMax?: number; colour?: string }) {
   const ticks = [-seconds, -Math.round(seconds / 2), 0];
@@ -112,6 +127,15 @@ function Panel({ perf, seconds }: { perf: Perf; seconds: number }) {
         <div className="grid gap-2">
           <h3 className="type-label">What was running when it waited</h3>
           <ul className="grid gap-1 type-body-sm">{perf.pressure.map((p) => <Pressure key={p.resource} p={p} />)}</ul>
+        </div>
+      )}
+      {perf.disk_paths.length > 0 && (
+        <div className="grid gap-2">
+          <h3 className="type-label">Spinning disks: what uses them</h3>
+          <p className="type-body-sm text-muted-foreground">
+            Steady use of a spinning disk is what to move to the SSD; bursts of big files are what these disks are for.
+          </p>
+          <DataTable caption="Spinning-disk use by service and folder" columns={fit(pathColumns, narrow)} rows={perf.disk_paths} rowKey={(d) => `${d.disk}|${who(d)}|${d.dir}`} />
         </div>
       )}
       {perf.services.length > 0 && (
